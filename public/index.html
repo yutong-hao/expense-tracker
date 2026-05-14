@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <h1 class="animated-title">
+        <span>E</span><span>x</span><span>p</span><span>e</span><span>n</span><span>s</span><span>e</span>
+        <span class="space"></span>
+        <span>T</span><span>r</span><span>a</span><span>c</span><span>k</span><span>e</span><span>r</span>
+      </h1>
+      <p class="subtitle">Track your daily spending easily.</p>
+    </header>
+
+    <div class="top-layout">
+      <div class="main-panel">
+
+        <section>
+          <h2>Add Expense</h2>
+
+          <form id="expense-form">
+            <input type="text" id="title" placeholder="Title" required />
+
+            <select id="category" required>
+              <option value="">Select category</option>
+              <option value="Food">Food</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Transport">Transport</option>
+            </select>
+
+            <div class="two-col-row">
+              <input type="text" id="amount" placeholder="Amount" inputmode="decimal" required />
+              <input type="date" id="date" required onkeydown="return false" />
+            </div>
+
+            <textarea id="description" placeholder="Description"></textarea>
+
+            <button type="submit">Add Expense</button>
+          </form>
+        </section>
+
+        <section>
+          <h2>Expense List</h2>
+          <div id="expense-list"></div>
+        </section>
+      </div>
+
+      <aside class="summary-receipt">
+        <div class="receipt-title">SUMMARY</div>
+        <div class="receipt-divider"></div>
+
+        <div class="receipt-label">Total</div>
+        <div class="receipt-total">$<span id="total-amount">0.00</span></div>
+
+        <div class="receipt-divider"></div>
+        <div id="category-summary"></div>
+        <div id="monthly-summary"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Edit Expense</h3>
+
+      <form id="edit-form">
+        <input type="hidden" id="edit-id" />
+
+        <input type="text" id="edit-title" placeholder="Title" required />
+
+        <select id="edit-category" required>
+          <option value="">Select category</option>
+          <option value="Food">Food</option>
+          <option value="Shopping">Shopping</option>
+          <option value="Transport">Transport</option>
+        </select>
+
+        <input type="text" id="edit-amount" placeholder="Amount" inputmode="decimal" required />
+        <input type="date" id="edit-date" required onkeydown="return false" />
+        <textarea id="edit-description" placeholder="Description"></textarea>
+
+        <div class="modal-actions">
+          <button type="button" id="cancel-edit">Cancel</button>
+          <button type="submit" id="save-edit">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="delete-modal" class="modal hidden">
+    <div class="modal-content delete-modal-box">
+      <div class="delete-emoji">🗑️</div>
+      <h3>Delete Expense?</h3>
+      <p>Are you sure you want to delete this expense?</p>
+
+      <div class="modal-actions">
+        <button type="button" id="cancel-delete">Cancel</button>
+        <button type="button" id="confirm-delete">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+<div id="toast-container"></div>
+</html>
