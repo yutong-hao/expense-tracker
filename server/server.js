@@ -1,11 +1,13 @@
 const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
+const bcrypt = require("bcrypt");
 const db = require("./db");
 
 const app = express();
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "expense-tracker-dev-secret";
+const BCRYPT_ROUNDS = 10;
 const ADMIN_ACCOUNTS = [
   { username: "admin123", password: "123456" },
   { username: "zzy", password: "654321" }
@@ -36,18 +38,11 @@ function parseBase64Url(input) {
 }
 
 function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(password, salt, 120000, 64, "sha512").toString("hex");
-  return `${salt}:${hash}`;
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
 function verifyPassword(password, storedHash) {
-  const [salt, originalHash] = String(storedHash || "").split(":");
-  if (!salt || !originalHash) return false;
-
-  const hash = crypto.pbkdf2Sync(password, salt, 120000, 64, "sha512").toString("hex");
-  if (hash.length !== originalHash.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(originalHash, "hex"));
+  return bcrypt.compare(password, storedHash || "");
 }
 
 function createToken(user) {
@@ -180,7 +175,7 @@ async function initializeAuthTables() {
   }
 
   for (const account of ADMIN_ACCOUNTS) {
-    const adminHash = hashPassword(account.password);
+    const adminHash = await hashPassword(account.password);
     await query(
       `
         INSERT INTO users (username, password_hash, role)
@@ -209,7 +204,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 
   try {
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
     const [result] = await query(
       "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')",
       [cleanUsername, passwordHash]
@@ -240,7 +235,7 @@ app.post("/api/auth/login", async (req, res) => {
     const [users] = await query("SELECT * FROM users WHERE username = ?", [cleanUsername]);
     const user = users[0];
 
-    if (!user || !verifyPassword(password, user.password_hash)) {
+    if (!user || !(await verifyPassword(password, user.password_hash))) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
 
@@ -273,7 +268,7 @@ app.post("/api/auth/change-password", async (req, res) => {
   }
 
   try {
-    const passwordHash = hashPassword(newPassword);
+    const passwordHash = await hashPassword(newPassword);
     const [result] = await query(
       "UPDATE users SET password_hash = ? WHERE username = ?",
       [passwordHash, cleanUsername]
