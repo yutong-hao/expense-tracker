@@ -29,6 +29,142 @@ body {
   min-width: 0;
 }
 
+.auth-panel {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.auth-card,
+.admin-panel {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-switch {
+  margin: 18px 0 0;
+  text-align: center;
+  color: #4b5563;
+}
+
+.compact-switch {
+  margin-top: 10px;
+}
+
+.link-button {
+  width: auto;
+  padding: 0;
+  margin: 0 0 0 4px;
+  background: transparent !important;
+  border: 0;
+  color: #4f46e5;
+  font-size: 16px;
+  font-weight: 800;
+  text-decoration: underline;
+  box-shadow: none !important;
+}
+
+.link-button:hover {
+  transform: none;
+  box-shadow: none;
+  color: #3730a3;
+}
+
+.session-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  margin: 26px 0 22px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 16px;
+  color: #374151;
+}
+
+.session-bar button {
+  width: auto;
+  min-width: 110px;
+  margin-top: 0;
+  background: #111827;
+}
+
+.role-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-panel {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: middle;
+}
+
+th {
+  color: #6b7280;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.role-select {
+  min-width: 110px;
+  padding: 8px 10px;
+  margin: 0;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.small-danger-btn {
+  width: auto;
+  min-width: 78px;
+  padding: 8px 12px;
+  margin-top: 0;
+  border-radius: 10px;
+  background: #dc2626 !important;
+  font-size: 14px;
+}
+
 
 .page-header {
   text-align: center;
@@ -447,14 +583,13 @@ button:active {
 
 @media (max-width: 900px) {
   .top-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 250px;
-    gap: 24px;
-    align-items: start;
+    grid-template-columns: 1fr;
   }
 
   .summary-receipt {
     order: -1;
+    margin-top: 0;
+    transform: none;
   }
 
   #expense-list {
@@ -463,6 +598,23 @@ button:active {
 }
 
 @media (max-width: 600px) {
+  body {
+    padding: 14px;
+  }
+
+  .container {
+    padding: 20px;
+  }
+
+  .session-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .session-bar button {
+    width: 100%;
+  }
+
   .two-col-row {
     flex-direction: column;
     gap: 10px;
