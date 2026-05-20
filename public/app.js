@@ -13,7 +13,9 @@ const showRegisterBtn = document.getElementById("show-register");
 const showLoginBtn = document.getElementById("show-login");
 const showChangePasswordBtn = document.getElementById("show-change-password");
 const showLoginFromPasswordBtn = document.getElementById("show-login-from-password");
-const logoutBtn = document.getElementById("logout-btn");
+const statusMenuBtn = document.getElementById("status-menu-btn");
+const statusMenuOptions = document.getElementById("status-menu-options");
+const statusToggleOption = document.getElementById("status-toggle-option");
 const currentUsername = document.getElementById("current-username");
 const currentRole = document.getElementById("current-role");
 const accountMenuBtn = document.getElementById("account-menu-btn");
@@ -31,6 +33,10 @@ const expenseWorkspace = document.getElementById("expense-workspace");
 const form = document.getElementById("expense-form");
 const expenseList = document.getElementById("expense-list");
 const totalAmount = document.getElementById("total-amount");
+const expenseSearch = document.getElementById("expense-search");
+const filterCategory = document.getElementById("filter-category");
+const sortExpenses = document.getElementById("sort-expenses");
+const clearFiltersBtn = document.getElementById("clear-filters");
 
 const editModal = document.getElementById("edit-modal");
 const editForm = document.getElementById("edit-form");
@@ -49,6 +55,12 @@ const confirmDeleteBtn = document.getElementById("confirm-delete");
 const initialState = {
   authToken: localStorage.getItem("expense_token"),
   activeUser: JSON.parse(localStorage.getItem("expense_user") || "null"),
+  expenses: [],
+  filters: {
+    search: "",
+    category: "",
+    sort: "date-desc"
+  },
   editingExpense: null,
   deleteTargetId: null
 };
@@ -66,8 +78,27 @@ function AppReducer(state, action) {
         ...state,
         authToken: null,
         activeUser: null,
+        expenses: [],
         editingExpense: null,
         deleteTargetId: null
+      };
+    case "SET_EXPENSES":
+      return {
+        ...state,
+        expenses: action.payload.expenses
+      };
+    case "SET_FILTER":
+      return {
+        ...state,
+        filters: {
+          ...state.filters,
+          [action.payload.name]: action.payload.value
+        }
+      };
+    case "CLEAR_FILTERS":
+      return {
+        ...state,
+        filters: initialState.filters
       };
     case "START_EDIT":
       return {
@@ -131,6 +162,11 @@ function renderAppState(state, previousState, action) {
     showAuthenticatedView();
   }
 
+  if (action.type === "SET_EXPENSES" || action.type === "SET_FILTER" || action.type === "CLEAR_FILTERS") {
+    syncFilterControls(state.filters);
+    renderExpenses(getVisibleExpenses(state.expenses, state.filters));
+  }
+
   if (state.editingExpense !== previousState.editingExpense) {
     if (state.editingExpense) {
       const expense = state.editingExpense;
@@ -170,11 +206,68 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function syncFilterControls(filters) {
+  if (expenseSearch) expenseSearch.value = filters.search;
+  if (filterCategory) filterCategory.value = filters.category;
+  if (sortExpenses) sortExpenses.value = filters.sort;
+}
+
+function getVisibleExpenses(expenses, filters) {
+  const search = filters.search.trim().toLowerCase();
+
+  return expenses
+    .filter(expense => {
+      const searchable = [
+        expense.title,
+        expense.category,
+        expense.description
+      ].join(" ").toLowerCase();
+
+      if (search && !searchable.includes(search)) return false;
+      if (filters.category && expense.category !== filters.category) return false;
+      return true;
+    })
+    .slice()
+    .sort((a, b) => {
+      const dateA = String(a.expense_date).split("T")[0];
+      const dateB = String(b.expense_date).split("T")[0];
+
+      switch (filters.sort) {
+        case "date-asc":
+          return dateA.localeCompare(dateB);
+        case "amount-desc":
+          return Number(b.amount) - Number(a.amount);
+        case "amount-asc":
+          return Number(a.amount) - Number(b.amount);
+        case "title-asc":
+          return String(a.title).localeCompare(String(b.title));
+        default:
+          return dateB.localeCompare(dateA);
+      }
+    });
+}
+
+function appendCell(row, value) {
+  const cell = document.createElement("td");
+  cell.textContent = value;
+  row.appendChild(cell);
+  return cell;
+}
+
 function showAuthenticatedView() {
   const { authToken, activeUser } = getAppState();
   const signedIn = Boolean(authToken && activeUser);
   authView.classList.toggle("hidden", signedIn);
   appView.classList.toggle("hidden", !signedIn);
+
+  statusMenuBtn.textContent = signedIn ? "Online" : "Offline";
+  statusMenuBtn.classList.toggle("online", signedIn);
+  statusMenuBtn.classList.toggle("offline", !signedIn);
+  statusToggleOption.textContent = signedIn ? "Offline" : "Online";
+  statusToggleOption.classList.toggle("online", !signedIn);
+  statusToggleOption.classList.toggle("offline", signedIn);
+  statusMenuOptions.classList.add("hidden");
+  statusMenuBtn.setAttribute("aria-expanded", "false");
 
   if (!signedIn) return;
 
@@ -296,7 +389,7 @@ changePasswordForm.addEventListener("submit", async function (event) {
   }
 });
 
-logoutBtn.addEventListener("click", async function () {
+async function goOffline() {
   try {
     await requestJson(`${API_BASE}/auth/logout`, {
       method: "POST",
@@ -308,6 +401,23 @@ logoutBtn.addEventListener("click", async function () {
 
   clearSession();
   showToast("Logged out");
+}
+
+statusMenuBtn.addEventListener("click", function () {
+  const open = statusMenuOptions.classList.toggle("hidden") === false;
+  statusMenuBtn.setAttribute("aria-expanded", String(open));
+});
+
+statusToggleOption.addEventListener("click", async function () {
+  const { authToken } = getAppState();
+
+  if (authToken) {
+    await goOffline();
+    return;
+  }
+
+  showAuthMode("login");
+  showAuthenticatedView();
 });
 
 function openAccountModal() {
@@ -362,12 +472,19 @@ accountModal.addEventListener("click", function (event) {
   }
 });
 
+document.addEventListener("click", function (event) {
+  if (!statusMenuBtn.contains(event.target) && !statusMenuOptions.contains(event.target)) {
+    statusMenuOptions.classList.add("hidden");
+    statusMenuBtn.setAttribute("aria-expanded", "false");
+  }
+});
+
 async function fetchExpenses() {
   try {
     const expenses = await requestJson(API_URL, {
       headers: authHeaders()
     });
-    renderExpenses(expenses);
+    dispatch({ type: "SET_EXPENSES", payload: { expenses } });
   } catch (error) {
     console.error("Failed to fetch expenses:", error);
   }
@@ -405,10 +522,11 @@ async function fetchMonthlySummary() {
 
     data.forEach(item => {
       const p = document.createElement("p");
-      p.innerHTML = `
-        <span>${item.month}</span>
-        <span>$${Number(item.total).toFixed(2)}</span>
-      `;
+      const month = document.createElement("span");
+      const total = document.createElement("span");
+      month.textContent = item.month;
+      total.textContent = `$${Number(item.total).toFixed(2)}`;
+      p.append(month, total);
       container.appendChild(p);
     });
   } catch (error) {
@@ -429,25 +547,41 @@ async function fetchAdminUsers() {
 
     users.forEach(user => {
       const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${user.id}</td>
-        <td>${user.username}</td>
-        <td>
-          <select class="role-select" data-user-id="${user.id}">
-            <option value="user" ${user.role === "user" ? "selected" : ""}>user</option>
-            <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
-          </select>
-        </td>
-        <td>${user.activity_count}</td>
-        <td>${formatDateTime(user.last_activity_at)}</td>
-        <td><button class="small-danger-btn" data-user-id="${user.id}">Delete</button></td>
-      `;
+      appendCell(row, user.id);
+      appendCell(row, user.username);
 
-      row.querySelector(".role-select").addEventListener("change", function () {
+      const roleCell = document.createElement("td");
+      const roleSelect = document.createElement("select");
+      roleSelect.className = "role-select";
+      roleSelect.dataset.userId = user.id;
+
+      ["user", "admin"].forEach(role => {
+        const option = document.createElement("option");
+        option.value = role;
+        option.textContent = role;
+        option.selected = user.role === role;
+        roleSelect.appendChild(option);
+      });
+
+      roleCell.appendChild(roleSelect);
+      row.appendChild(roleCell);
+
+      appendCell(row, user.activity_count);
+      appendCell(row, formatDateTime(user.last_activity_at));
+
+      const actionCell = document.createElement("td");
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "small-danger-btn";
+      deleteBtn.dataset.userId = user.id;
+      deleteBtn.textContent = "Delete";
+      actionCell.appendChild(deleteBtn);
+      row.appendChild(actionCell);
+
+      roleSelect.addEventListener("change", function () {
         updateUserRole(user.id, this.value);
       });
 
-      row.querySelector(".small-danger-btn").addEventListener("click", function () {
+      deleteBtn.addEventListener("click", function () {
         deleteUser(user.id);
       });
 
@@ -471,12 +605,10 @@ async function fetchAdminActivities() {
 
     activities.forEach(activity => {
       const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${formatDateTime(activity.created_at)}</td>
-        <td>${activity.username} (${activity.role})</td>
-        <td>${activity.action}</td>
-        <td>${activity.details || ""}</td>
-      `;
+      appendCell(row, formatDateTime(activity.created_at));
+      appendCell(row, `${activity.username} (${activity.role})`);
+      appendCell(row, activity.action);
+      appendCell(row, activity.details || "");
       adminActivities.appendChild(row);
     });
   } catch (error) {
@@ -644,6 +776,15 @@ function renderExpenses(expenses) {
   expenseList.innerHTML = "";
   let total = 0;
 
+  if (!expenses.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No expenses match your current filters.";
+    expenseList.appendChild(empty);
+    totalAmount.textContent = "0.00";
+    return;
+  }
+
   expenses.forEach(function (expense) {
     total += Number(expense.amount);
 
@@ -653,24 +794,38 @@ function renderExpenses(expenses) {
     expenseItem.classList.add("expense-item");
     expenseItem.setAttribute("data-id", expense.id);
 
-    expenseItem.innerHTML = `
-      <h3>${expense.title}</h3>
-      <p><strong>Category:</strong> ${expense.category}</p>
-      <p><strong>Amount:</strong> $${Number(expense.amount).toFixed(2)}</p>
-      <p><strong>Date:</strong> ${displayDate}</p>
-      <p><strong>Description:</strong> ${expense.description || ""}</p>
-      <button class="edit-btn">Edit</button>
-      <button class="delete-btn">Delete</button>
-    `;
+    const title = document.createElement("h3");
+    title.textContent = expense.title;
 
-    expenseItem.querySelector(".edit-btn").addEventListener("click", function () {
+    const category = document.createElement("p");
+    category.textContent = `Category: ${expense.category}`;
+
+    const amount = document.createElement("p");
+    amount.textContent = `Amount: $${Number(expense.amount).toFixed(2)}`;
+
+    const date = document.createElement("p");
+    date.textContent = `Date: ${displayDate}`;
+
+    const description = document.createElement("p");
+    description.textContent = `Description: ${expense.description || ""}`;
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "edit-btn";
+    editBtn.textContent = "Edit";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "delete-btn";
+    deleteBtn.textContent = "Delete";
+
+    editBtn.addEventListener("click", function () {
       dispatch({ type: "START_EDIT", payload: { expense } });
     });
 
-    expenseItem.querySelector(".delete-btn").addEventListener("click", function () {
+    deleteBtn.addEventListener("click", function () {
       dispatch({ type: "START_DELETE", payload: { id: expense.id } });
     });
 
+    expenseItem.append(title, category, amount, date, description, editBtn, deleteBtn);
     expenseList.appendChild(expenseItem);
     expenseItem.classList.add("added");
   });
@@ -720,5 +875,29 @@ document.getElementById("amount").addEventListener("input", function () {
 document.getElementById("edit-amount").addEventListener("input", function () {
   formatAmountInput(this);
 });
+
+if (expenseSearch) {
+  expenseSearch.addEventListener("input", function () {
+    dispatch({ type: "SET_FILTER", payload: { name: "search", value: this.value } });
+  });
+}
+
+if (filterCategory) {
+  filterCategory.addEventListener("change", function () {
+    dispatch({ type: "SET_FILTER", payload: { name: "category", value: this.value } });
+  });
+}
+
+if (sortExpenses) {
+  sortExpenses.addEventListener("change", function () {
+    dispatch({ type: "SET_FILTER", payload: { name: "sort", value: this.value } });
+  });
+}
+
+if (clearFiltersBtn) {
+  clearFiltersBtn.addEventListener("click", function () {
+    dispatch({ type: "CLEAR_FILTERS" });
+  });
+}
 
 showAuthenticatedView();
