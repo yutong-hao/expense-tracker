@@ -180,7 +180,7 @@ async function initializeAuthTables() {
       `
         INSERT INTO users (username, password_hash, role)
         VALUES (?, ?, 'admin')
-        ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), role = 'admin'
+        ON DUPLICATE KEY UPDATE role = 'admin'
       `,
       [account.username, adminHash]
     );
@@ -255,12 +255,84 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.put("/api/auth/profile", authenticate, async (req, res) => {
+  const { username, currentPassword, newPassword } = req.body;
+  const cleanUsername = String(username || "").trim();
+  const wantsPasswordChange = Boolean(newPassword);
+
+  if (!cleanUsername) {
+    return res.status(400).json({ error: "Username is required" });
+  }
+
+  if (wantsPasswordChange) {
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Current password is required" });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+  }
+
+  try {
+    const [users] = await query("SELECT * FROM users WHERE id = ?", [req.user.id]);
+    const user = users[0];
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (wantsPasswordChange && !(await verifyPassword(currentPassword, user.password_hash))) {
+      return res.status(400).json({ error: "Current password is incorrect" });
+    }
+
+    const updates = ["username = ?"];
+    const params = [cleanUsername];
+
+    if (wantsPasswordChange) {
+      updates.push("password_hash = ?");
+      params.push(await hashPassword(newPassword));
+    }
+
+    params.push(req.user.id);
+    await query(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, params);
+
+    const [updatedUsers] = await query(
+      "SELECT id, username, role FROM users WHERE id = ?",
+      [req.user.id]
+    );
+    const updatedUser = updatedUsers[0];
+
+    await logActivity(
+      req.user.id,
+      wantsPasswordChange ? "update_profile_password" : "update_profile",
+      wantsPasswordChange ? "Updated username/password settings" : "Updated username"
+    );
+
+    res.json({
+      token: createToken(updatedUser),
+      user: {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        role: updatedUser.role
+      }
+    });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Username already exists" });
+    }
+
+    console.error("Profile update failed:", err);
+    res.status(500).json({ error: "Profile update failed" });
+  }
+});
+
 app.post("/api/auth/change-password", async (req, res) => {
-  const { username, newPassword } = req.body;
+  const { username, currentPassword, newPassword } = req.body;
   const cleanUsername = String(username || "").trim();
 
-  if (!cleanUsername || !newPassword) {
-    return res.status(400).json({ error: "Username and new password are required" });
+  if (!cleanUsername || !currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Username, current password, and new password are required" });
   }
 
   if (String(newPassword).length < 6) {
@@ -268,18 +340,19 @@ app.post("/api/auth/change-password", async (req, res) => {
   }
 
   try {
-    const passwordHash = await hashPassword(newPassword);
-    const [result] = await query(
-      "UPDATE users SET password_hash = ? WHERE username = ?",
-      [passwordHash, cleanUsername]
-    );
+    const [users] = await query("SELECT * FROM users WHERE username = ?", [cleanUsername]);
+    const user = users[0];
 
-    if (result.affectedRows === 0) {
+    if (!user) {
       return res.status(404).json({ error: "Username not found" });
     }
 
-    const [users] = await query("SELECT id FROM users WHERE username = ?", [cleanUsername]);
-    await logActivity(users[0]?.id, "change_password", "Changed password from login page");
+    if (!(await verifyPassword(currentPassword, user.password_hash))) {
+      return res.status(400).json({ error: "Current password is incorrect" });
+    }
+
+    await query("UPDATE users SET password_hash = ? WHERE id = ?", [await hashPassword(newPassword), user.id]);
+    await logActivity(user.id, "change_password", "Changed password from login page");
 
     res.json({ message: "Password changed successfully" });
   } catch (err) {

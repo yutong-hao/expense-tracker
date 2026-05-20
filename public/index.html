@@ -51,6 +51,7 @@
         <h2>Change Password</h2>
         <form id="change-password-form">
           <input type="text" id="change-password-username" placeholder="Username" required />
+          <input type="password" id="change-password-current" placeholder="Current password" required />
           <input type="password" id="change-password-new" placeholder="New password" required minlength="6" />
           <button type="submit">Update Password</button>
         </form>
@@ -63,11 +64,13 @@
 
     <div id="app-view" class="hidden">
       <div class="session-bar">
-        <div>
-          Signed in as <strong id="current-username"></strong>
-          <span id="current-role" class="role-pill"></span>
+        <div class="session-actions">
+          <button type="button" id="account-menu-btn" class="user-menu-button">
+            <span id="current-username"></span>
+            <span id="current-role" class="role-pill"></span>
+          </button>
+          <button type="button" id="logout-btn" class="logout-button">Logout</button>
         </div>
-        <button type="button" id="logout-btn">Logout</button>
       </div>
 
       <section id="admin-panel" class="admin-panel hidden">
@@ -184,9 +187,32 @@
     </div>
   </div>
 
+  <div id="account-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Account Settings</h3>
+
+      <form id="account-form">
+        <label for="account-username">Username</label>
+        <input type="text" id="account-username" placeholder="Username" required />
+
+        <label for="account-current-password">Current password</label>
+        <input type="password" id="account-current-password" placeholder="Required to change password" />
+
+        <label for="account-new-password">New password</label>
+        <input type="password" id="account-new-password" placeholder="Leave blank to keep current password" minlength="6" />
+
+        <p class="form-hint">Enter your current password only when changing your password.</p>
+
+        <div class="modal-actions">
+          <button type="button" id="cancel-account">Cancel</button>
+          <button type="submit" id="save-account">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
   <div id="delete-modal" class="modal hidden">
     <div class="modal-content delete-modal-box">
-      <div class="delete-emoji">🗑️</div>
+      <div class="delete-emoji">&#128465;&#65039;</div>
       <h3>Delete Expense?</h3>
       <p>Are you sure you want to delete this expense?</p>
 

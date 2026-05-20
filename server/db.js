@@ -1,12 +1,15 @@
 const mysql = require("mysql2");
 
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",
-  database: "expense_tracker",
+const dbConfig = {
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD ?? "3.1415",
+  database: process.env.DB_NAME || "expense_tracker",
+  port: Number(process.env.DB_PORT || 3306),
   dateStrings: true
-});
+};
+
+const db = mysql.createConnection(dbConfig);
 
 db.connect((err) => {
   if (err) {
@@ -18,3 +21,4 @@ db.connect((err) => {
 });
 
 module.exports = db;
+

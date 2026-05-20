@@ -16,6 +16,13 @@ const showLoginFromPasswordBtn = document.getElementById("show-login-from-passwo
 const logoutBtn = document.getElementById("logout-btn");
 const currentUsername = document.getElementById("current-username");
 const currentRole = document.getElementById("current-role");
+const accountMenuBtn = document.getElementById("account-menu-btn");
+const accountModal = document.getElementById("account-modal");
+const accountForm = document.getElementById("account-form");
+const accountUsername = document.getElementById("account-username");
+const accountCurrentPassword = document.getElementById("account-current-password");
+const accountNewPassword = document.getElementById("account-new-password");
+const cancelAccountBtn = document.getElementById("cancel-account");
 const adminPanel = document.getElementById("admin-panel");
 const adminUsers = document.getElementById("admin-users");
 const adminActivities = document.getElementById("admin-activities");
@@ -33,17 +40,121 @@ const editCategory = document.getElementById("edit-category");
 const editAmount = document.getElementById("edit-amount");
 const editDate = document.getElementById("edit-date");
 const editDescription = document.getElementById("edit-description");
-const cancelEditBtn = document.getElementById("cancel-edit");
+const editCancelBtn = document.getElementById("cancel-edit");
 
 const deleteModal = document.getElementById("delete-modal");
 const cancelDeleteBtn = document.getElementById("cancel-delete");
 const confirmDeleteBtn = document.getElementById("confirm-delete");
 
-let deleteTargetId = null;
-let authToken = localStorage.getItem("expense_token");
-let activeUser = JSON.parse(localStorage.getItem("expense_user") || "null");
+const initialState = {
+  authToken: localStorage.getItem("expense_token"),
+  activeUser: JSON.parse(localStorage.getItem("expense_user") || "null"),
+  editingExpense: null,
+  deleteTargetId: null
+};
+
+function AppReducer(state, action) {
+  switch (action.type) {
+    case "SET_SESSION":
+      return {
+        ...state,
+        authToken: action.payload.token,
+        activeUser: action.payload.user
+      };
+    case "CLEAR_SESSION":
+      return {
+        ...state,
+        authToken: null,
+        activeUser: null,
+        editingExpense: null,
+        deleteTargetId: null
+      };
+    case "START_EDIT":
+      return {
+        ...state,
+        editingExpense: action.payload.expense
+      };
+    case "CANCEL_EDIT":
+      return {
+        ...state,
+        editingExpense: null
+      };
+    case "START_DELETE":
+      return {
+        ...state,
+        deleteTargetId: action.payload.id
+      };
+    case "CANCEL_DELETE":
+      return {
+        ...state,
+        deleteTargetId: null
+      };
+    default:
+      return state;
+  }
+}
+
+function useReducer(reducer, startingState) {
+  let state = startingState;
+
+  function getState() {
+    return state;
+  }
+
+  function dispatch(action) {
+    const previousState = state;
+    state = reducer(state, action);
+    renderAppState(state, previousState, action);
+  }
+
+  return [getState, dispatch];
+}
+
+const [getAppState, dispatch] = useReducer(AppReducer, initialState);
+
+function renderAppState(state, previousState, action) {
+  if (state.authToken && state.activeUser) {
+    localStorage.setItem("expense_token", state.authToken);
+    localStorage.setItem("expense_user", JSON.stringify(state.activeUser));
+  } else {
+    localStorage.removeItem("expense_token");
+    localStorage.removeItem("expense_user");
+  }
+
+  if (action.type === "SET_SESSION" || action.type === "CLEAR_SESSION") {
+    if (action.type === "CLEAR_SESSION") {
+      editModal.classList.add("hidden");
+      deleteModal.classList.add("hidden");
+      editForm.reset();
+    }
+
+    showAuthenticatedView();
+  }
+
+  if (state.editingExpense !== previousState.editingExpense) {
+    if (state.editingExpense) {
+      const expense = state.editingExpense;
+      editId.value = expense.id;
+      editTitle.value = expense.title;
+      editCategory.value = expense.category;
+      editAmount.value = expense.amount;
+      editDate.value = String(expense.expense_date).split("T")[0];
+      editDescription.value = expense.description || "";
+      editModal.classList.remove("hidden");
+    } else {
+      editModal.classList.add("hidden");
+      editForm.reset();
+    }
+  }
+
+  if (state.deleteTargetId !== previousState.deleteTargetId) {
+    deleteModal.classList.toggle("hidden", state.deleteTargetId === null);
+  }
+}
 
 function authHeaders() {
+  const { authToken } = getAppState();
+
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${authToken}`
@@ -60,6 +171,7 @@ function formatDateTime(value) {
 }
 
 function showAuthenticatedView() {
+  const { authToken, activeUser } = getAppState();
   const signedIn = Boolean(authToken && activeUser);
   authView.classList.toggle("hidden", signedIn);
   appView.classList.toggle("hidden", !signedIn);
@@ -89,22 +201,11 @@ async function requestJson(url, options = {}) {
 }
 
 function saveSession(data) {
-  authToken = data.token;
-  activeUser = data.user;
-  localStorage.setItem("expense_token", authToken);
-  localStorage.setItem("expense_user", JSON.stringify(activeUser));
-  showAuthenticatedView();
+  dispatch({ type: "SET_SESSION", payload: data });
 }
 
 function clearSession() {
-  authToken = null;
-  activeUser = null;
-  localStorage.removeItem("expense_token");
-  localStorage.removeItem("expense_user");
-  authView.classList.remove("hidden");
-  appView.classList.add("hidden");
-  adminPanel.classList.add("hidden");
-  expenseWorkspace.classList.remove("hidden");
+  dispatch({ type: "CLEAR_SESSION" });
 }
 
 function showAuthMode(mode) {
@@ -182,6 +283,7 @@ changePasswordForm.addEventListener("submit", async function (event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username: document.getElementById("change-password-username").value.trim(),
+        currentPassword: document.getElementById("change-password-current").value,
         newPassword: document.getElementById("change-password-new").value
       })
     });
@@ -206,6 +308,58 @@ logoutBtn.addEventListener("click", async function () {
 
   clearSession();
   showToast("Logged out");
+});
+
+function openAccountModal() {
+  const { activeUser } = getAppState();
+  accountUsername.value = activeUser?.username || "";
+  accountCurrentPassword.value = "";
+  accountNewPassword.value = "";
+  accountModal.classList.remove("hidden");
+}
+
+function closeAccountModal() {
+  accountModal.classList.add("hidden");
+  accountForm.reset();
+}
+
+accountMenuBtn.addEventListener("click", openAccountModal);
+cancelAccountBtn.addEventListener("click", closeAccountModal);
+
+accountForm.addEventListener("submit", async function (event) {
+  event.preventDefault();
+
+  const newPassword = accountNewPassword.value;
+  const currentPassword = accountCurrentPassword.value;
+
+  if (newPassword && !currentPassword) {
+    showToast("Current password is required to change password");
+    return;
+  }
+
+  try {
+    const data = await requestJson(`${API_BASE}/auth/profile`, {
+      method: "PUT",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        username: accountUsername.value.trim(),
+        currentPassword,
+        newPassword
+      })
+    });
+
+    saveSession(data);
+    closeAccountModal();
+    showToast("Account updated successfully");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+accountModal.addEventListener("click", function (event) {
+  if (event.target === accountModal) {
+    closeAccountModal();
+  }
 });
 
 async function fetchExpenses() {
@@ -263,6 +417,7 @@ async function fetchMonthlySummary() {
 }
 
 async function fetchAdminUsers() {
+  const { activeUser } = getAppState();
   if (activeUser?.role !== "admin") return;
 
   try {
@@ -304,6 +459,7 @@ async function fetchAdminUsers() {
 }
 
 async function fetchAdminActivities() {
+  const { activeUser } = getAppState();
   if (activeUser?.role !== "admin") return;
 
   try {
@@ -366,6 +522,7 @@ function refreshAdmin() {
 }
 
 function refreshAll() {
+  const { authToken, activeUser } = getAppState();
   if (!authToken) return;
 
   if (activeUser?.role === "admin") {
@@ -409,24 +566,10 @@ form.addEventListener("submit", async function (event) {
   }
 });
 
-function editExpense(expense) {
-  editId.value = expense.id;
-  editTitle.value = expense.title;
-  editCategory.value = expense.category;
-  editAmount.value = expense.amount;
-  editDate.value = String(expense.expense_date).split("T")[0];
-  editDescription.value = expense.description || "";
-
-  editModal.classList.remove("hidden");
-}
-
-function closeEditModal() {
-  editModal.classList.add("hidden");
-  editForm.reset();
-}
-
-if (cancelEditBtn) {
-  cancelEditBtn.addEventListener("click", closeEditModal);
+if (editCancelBtn) {
+  editCancelBtn.addEventListener("click", function () {
+    dispatch({ type: "CANCEL_EDIT" });
+  });
 }
 
 if (editForm) {
@@ -453,7 +596,7 @@ if (editForm) {
         body: JSON.stringify(updatedExpense)
       });
 
-      closeEditModal();
+      dispatch({ type: "CANCEL_EDIT" });
       refreshAll();
       showToast("Expense updated successfully");
     } catch (error) {
@@ -462,25 +605,19 @@ if (editForm) {
   });
 }
 
-function deleteExpense(id) {
-  deleteTargetId = id;
-  deleteModal.classList.remove("hidden");
-}
-
-function closeDeleteModal() {
-  deleteTargetId = null;
-  deleteModal.classList.add("hidden");
-}
-
 if (cancelDeleteBtn) {
-  cancelDeleteBtn.addEventListener("click", closeDeleteModal);
+  cancelDeleteBtn.addEventListener("click", function () {
+    dispatch({ type: "CANCEL_DELETE" });
+  });
 }
 
 if (confirmDeleteBtn) {
   confirmDeleteBtn.addEventListener("click", async function () {
+    const { deleteTargetId } = getAppState();
     if (deleteTargetId === null) return;
 
-    const element = document.querySelector(`[data-id='${deleteTargetId}']`);
+    const targetId = deleteTargetId;
+    const element = document.querySelector(`[data-id='${targetId}']`);
 
     if (element) {
       element.classList.add("removing");
@@ -488,12 +625,12 @@ if (confirmDeleteBtn) {
 
     setTimeout(async () => {
       try {
-        await requestJson(`${API_URL}/${deleteTargetId}`, {
+        await requestJson(`${API_URL}/${targetId}`, {
           method: "DELETE",
           headers: authHeaders()
         });
 
-        closeDeleteModal();
+        dispatch({ type: "CANCEL_DELETE" });
         refreshAll();
         showToast("Expense deleted successfully");
       } catch (error) {
@@ -527,11 +664,11 @@ function renderExpenses(expenses) {
     `;
 
     expenseItem.querySelector(".edit-btn").addEventListener("click", function () {
-      editExpense(expense);
+      dispatch({ type: "START_EDIT", payload: { expense } });
     });
 
     expenseItem.querySelector(".delete-btn").addEventListener("click", function () {
-      deleteExpense(expense.id);
+      dispatch({ type: "START_DELETE", payload: { id: expense.id } });
     });
 
     expenseList.appendChild(expenseItem);
