@@ -1,7 +1,6 @@
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const db = require("./db");
 
 const app = express();
@@ -24,6 +23,19 @@ function isValidDate(dateStr) {
   return /^[1-9]\d{3}-\d{2}-\d{2}$/.test(dateStr);
 }
 
+function base64Url(input) {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+function parseBase64Url(input) {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(normalized, "base64").toString("utf8");
+}
+
 function hashPassword(password) {
   return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
@@ -33,20 +45,46 @@ async function verifyPassword(password, storedHash) {
 }
 
 function createToken(user) {
-  return jwt.sign(
-    {
-      id: user.id,
-      username: user.username,
-      role: user.role
-    },
-    JWT_SECRET,
-    { expiresIn: "8h" }
-  );
+  const header = base64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = base64Url(JSON.stringify({
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8
+  }));
+  const signature = crypto
+    .createHmac("sha256", JWT_SECRET)
+    .update(`${header}.${payload}`)
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  return `${header}.${payload}.${signature}`;
 }
 
 function verifyToken(token) {
+  const [header, payload, signature] = String(token || "").split(".");
+  if (!header || !payload || !signature) return null;
+
+  const expectedSignature = crypto
+    .createHmac("sha256", JWT_SECRET)
+    .update(`${header}.${payload}`)
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  if (signature.length !== expectedSignature.length) return null;
+
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    return null;
+  }
+
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const data = JSON.parse(parseBase64Url(payload));
+    if (data.exp && data.exp < Math.floor(Date.now() / 1000)) return null;
+    return data;
   } catch (err) {
     return null;
   }

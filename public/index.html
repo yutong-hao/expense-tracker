@@ -81,6 +81,24 @@
       <section id="admin-panel" class="admin-panel hidden">
         <div>
           <h2>User Accounts</h2>
+          <div class="admin-user-controls">
+            <input type="search" id="admin-user-search" placeholder="Search username" />
+            <select id="admin-role-filter">
+              <option value="">All roles</option>
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+            <input type="date" id="admin-activity-date-filter" aria-label="Filter activity date" />
+            <select id="activity-action-filter">
+              <option value="">All activities</option>
+              <option value="login">login</option>
+              <option value="logout">logout</option>
+              <option value="create">create</option>
+              <option value="update">update</option>
+              <option value="delete">delete</option>
+            </select>
+            <button type="button" id="admin-clear-filters" class="secondary-tool-btn">Clear</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -95,6 +113,11 @@
               </thead>
               <tbody id="admin-users"></tbody>
             </table>
+          </div>
+          <div class="pagination-controls">
+            <button type="button" id="user-prev-page" class="ledger-page-btn ledger-page-prev" aria-label="Previous user page" title="Previous page"></button>
+            <span id="user-page-info" class="ledger-page-label">1 of 1</span>
+            <button type="button" id="user-next-page" class="ledger-page-btn ledger-page-next" aria-label="Next user page" title="Next page"></button>
           </div>
         </div>
 
@@ -112,6 +135,11 @@
               </thead>
               <tbody id="admin-activities"></tbody>
             </table>
+          </div>
+          <div class="pagination-controls">
+            <button type="button" id="activity-prev-page" class="ledger-page-btn ledger-page-prev" aria-label="Previous activity page" title="Previous page"></button>
+            <span id="activity-page-info" class="ledger-page-label">1 of 1</span>
+            <button type="button" id="activity-next-page" class="ledger-page-btn ledger-page-next" aria-label="Next activity page" title="Next page"></button>
           </div>
         </div>
       </section>
@@ -153,6 +181,8 @@
               <option value="Shopping">Shopping</option>
               <option value="Transport">Transport</option>
             </select>
+            <input type="number" id="filter-min-amount" placeholder="Min" min="0" step="0.01" />
+            <input type="number" id="filter-max-amount" placeholder="Max" min="0" step="0.01" />
             <select id="sort-expenses">
               <option value="date-desc">Newest first</option>
               <option value="date-asc">Oldest first</option>

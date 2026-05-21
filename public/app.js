@@ -1,5 +1,18 @@
 const API_BASE = "http://localhost:3000/api";
 const API_URL = `${API_BASE}/expenses`;
+const LEDGER_PAGE_SIZE = 6;
+let expenseRequestId = 0;
+
+const CATEGORY_COLORS = {
+  'Food':          { bg: '#ead5be', border: '#d4b896' },
+  'Shopping':      { bg: '#bdd0e0', border: '#9ab8d0' },
+  'Transport':     { bg: '#c2d4c2', border: '#9fbf9f' },
+  'Entertainment': { bg: '#e0c4c8', border: '#cba4aa' },
+  'Health':        { bg: '#b8d4d0', border: '#90bcb8' },
+  'Utilities':     { bg: '#ddd8b0', border: '#c8c088' },
+  'Education':     { bg: '#c2d4cc', border: '#9ec0b4' },
+  'default':       { bg: '#d2d6d8', border: '#b4babе' },
+};
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -28,6 +41,17 @@ const cancelAccountBtn = document.getElementById("cancel-account");
 const adminPanel = document.getElementById("admin-panel");
 const adminUsers = document.getElementById("admin-users");
 const adminActivities = document.getElementById("admin-activities");
+const adminUserSearch = document.getElementById("admin-user-search");
+const adminRoleFilter = document.getElementById("admin-role-filter");
+const adminActivityDateFilter = document.getElementById("admin-activity-date-filter");
+const activityActionFilter = document.getElementById("activity-action-filter");
+const adminClearFiltersBtn = document.getElementById("admin-clear-filters");
+const userPrevPage = document.getElementById("user-prev-page");
+const userNextPage = document.getElementById("user-next-page");
+const userPageInfo = document.getElementById("user-page-info");
+const activityPrevPage = document.getElementById("activity-prev-page");
+const activityNextPage = document.getElementById("activity-next-page");
+const activityPageInfo = document.getElementById("activity-page-info");
 const expenseWorkspace = document.getElementById("expense-workspace");
 
 const form = document.getElementById("expense-form");
@@ -35,6 +59,8 @@ const expenseList = document.getElementById("expense-list");
 const totalAmount = document.getElementById("total-amount");
 const expenseSearch = document.getElementById("expense-search");
 const filterCategory = document.getElementById("filter-category");
+const filterMinAmount = document.getElementById("filter-min-amount");
+const filterMaxAmount = document.getElementById("filter-max-amount");
 const sortExpenses = document.getElementById("sort-expenses");
 const clearFiltersBtn = document.getElementById("clear-filters");
 
@@ -56,9 +82,33 @@ const initialState = {
   authToken: localStorage.getItem("expense_token"),
   activeUser: JSON.parse(localStorage.getItem("expense_user") || "null"),
   expenses: [],
+  expandedCategories: {},
+  ledgerPage: 1,
+  adminUserRecords: [],
+  adminUserFilters: {
+    search: "",
+    role: "",
+    date: "",
+    action: ""
+  },
+  adminUserPagination: {
+    page: 1,
+    pageSize: 10,
+    pageCount: 1,
+    total: 0
+  },
+  adminActivities: [],
+  activityFilters: {
+    page: 1,
+    pageSize: 10,
+    pageCount: 1,
+    total: 0
+  },
   filters: {
     search: "",
     category: "",
+    minAmount: "",
+    maxAmount: "",
     sort: "date-desc"
   },
   editingExpense: null,
@@ -79,13 +129,21 @@ function AppReducer(state, action) {
         authToken: null,
         activeUser: null,
         expenses: [],
+        expandedCategories: {},
+        ledgerPage: 1,
+        adminUserRecords: [],
+        adminUserFilters: initialState.adminUserFilters,
+        adminUserPagination: initialState.adminUserPagination,
+        adminActivities: [],
+        activityFilters: initialState.activityFilters,
         editingExpense: null,
         deleteTargetId: null
       };
     case "SET_EXPENSES":
       return {
         ...state,
-        expenses: action.payload.expenses
+        expenses: action.payload.expenses,
+        ledgerPage: 1
       };
     case "SET_FILTER":
       return {
@@ -93,12 +151,94 @@ function AppReducer(state, action) {
         filters: {
           ...state.filters,
           [action.payload.name]: action.payload.value
-        }
+        },
+        ledgerPage: 1
       };
     case "CLEAR_FILTERS":
       return {
         ...state,
-        filters: initialState.filters
+        filters: initialState.filters,
+        ledgerPage: 1
+      };
+    case "TOGGLE_CATEGORY_GROUP":
+      if (state.expandedCategories[action.payload.category]) {
+        return {
+          ...state,
+          expandedCategories: {},
+          ledgerPage: 1
+        };
+      }
+
+      return {
+        ...state,
+        expandedCategories: {
+          [action.payload.category]: true
+        },
+        ledgerPage: 1
+      };
+    case "SET_LEDGER_PAGE":
+      return {
+        ...state,
+        ledgerPage: action.payload.page
+      };
+    case "SET_ADMIN_ACTIVITIES":
+      return {
+        ...state,
+        adminActivities: action.payload.activities,
+        activityFilters: action.payload.pagination
+      };
+    case "SET_ADMIN_USERS":
+      return {
+        ...state,
+        adminUserRecords: action.payload.users,
+        adminUserPagination: action.payload.pagination
+      };
+    case "SET_ADMIN_USER_FILTER":
+      return {
+        ...state,
+        adminUserFilters: {
+          ...state.adminUserFilters,
+          [action.payload.name]: action.payload.value
+        },
+        activityFilters: {
+          ...state.activityFilters,
+          page: 1
+        },
+        adminUserPagination: {
+          ...state.adminUserPagination,
+          page: 1
+        }
+      };
+    case "CLEAR_ADMIN_USER_FILTERS":
+      return {
+        ...state,
+        adminUserFilters: {
+          ...initialState.adminUserFilters
+        },
+        activityFilters: {
+          ...state.activityFilters,
+          page: 1
+        },
+        adminUserPagination: {
+          ...state.adminUserPagination,
+          page: 1
+        }
+      };
+    case "SET_ADMIN_USER_PAGE":
+      return {
+        ...state,
+        adminUserPagination: {
+          ...state.adminUserPagination,
+          page: action.payload.page
+        }
+      };
+    case "SET_ACTIVITY_PAGE":
+      return {
+        ...state,
+        activityFilters: {
+          ...state.activityFilters,
+          page: action.payload.page
+        }
       };
     case "START_EDIT":
       return {
@@ -162,9 +302,22 @@ function renderAppState(state, previousState, action) {
     showAuthenticatedView();
   }
 
-  if (action.type === "SET_EXPENSES" || action.type === "SET_FILTER" || action.type === "CLEAR_FILTERS") {
+  if (action.type === "SET_FILTER" || action.type === "CLEAR_FILTERS") {
     syncFilterControls(state.filters);
-    renderExpenses(getVisibleExpenses(state.expenses, state.filters));
+  }
+
+  if (action.type === "SET_EXPENSES" || action.type === "TOGGLE_CATEGORY_GROUP" || action.type === "SET_LEDGER_PAGE") {
+    syncFilterControls(state.filters);
+    renderExpenses(state.expenses, state.expandedCategories, state.ledgerPage);
+  }
+
+  if (action.type === "SET_ADMIN_ACTIVITIES") {
+    renderAdminActivities(state.adminActivities, state.activityFilters);
+  }
+
+  if (action.type === "SET_ADMIN_USERS" || action.type === "SET_ADMIN_USER_FILTER" || action.type === "CLEAR_ADMIN_USER_FILTERS") {
+    syncAdminUserFilterControls(state.adminUserFilters);
+    renderAdminUsers(state.adminUserRecords, state.adminUserFilters, state.adminUserPagination);
   }
 
   if (state.editingExpense !== previousState.editingExpense) {
@@ -209,42 +362,35 @@ function formatDateTime(value) {
 function syncFilterControls(filters) {
   if (expenseSearch) expenseSearch.value = filters.search;
   if (filterCategory) filterCategory.value = filters.category;
+  if (filterMinAmount) filterMinAmount.value = filters.minAmount;
+  if (filterMaxAmount) filterMaxAmount.value = filters.maxAmount;
   if (sortExpenses) sortExpenses.value = filters.sort;
 }
 
-function getVisibleExpenses(expenses, filters) {
-  const search = filters.search.trim().toLowerCase();
+function renderAdminActivities(activities, pagination) {
+  adminActivities.innerHTML = "";
 
-  return expenses
-    .filter(expense => {
-      const searchable = [
-        expense.title,
-        expense.category,
-        expense.description
-      ].join(" ").toLowerCase();
+  if (!activities.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.textContent = "No activity matches the current filters.";
+    row.appendChild(cell);
+    adminActivities.appendChild(row);
+  }
 
-      if (search && !searchable.includes(search)) return false;
-      if (filters.category && expense.category !== filters.category) return false;
-      return true;
-    })
-    .slice()
-    .sort((a, b) => {
-      const dateA = String(a.expense_date).split("T")[0];
-      const dateB = String(b.expense_date).split("T")[0];
+  activities.forEach(activity => {
+    const row = document.createElement("tr");
+    appendCell(row, formatDateTime(activity.created_at));
+    appendCell(row, `${activity.username} (${activity.role})`);
+    appendCell(row, activity.action);
+    appendCell(row, activity.details || "");
+    adminActivities.appendChild(row);
+  });
 
-      switch (filters.sort) {
-        case "date-asc":
-          return dateA.localeCompare(dateB);
-        case "amount-desc":
-          return Number(b.amount) - Number(a.amount);
-        case "amount-asc":
-          return Number(a.amount) - Number(b.amount);
-        case "title-asc":
-          return String(a.title).localeCompare(String(b.title));
-        default:
-          return dateB.localeCompare(dateA);
-      }
-    });
+  activityPageInfo.textContent = `${pagination.page} of ${pagination.pageCount}`;
+  activityPrevPage.disabled = pagination.page <= 1;
+  activityNextPage.disabled = pagination.page >= pagination.pageCount;
 }
 
 function appendCell(row, value) {
@@ -252,6 +398,77 @@ function appendCell(row, value) {
   cell.textContent = value;
   row.appendChild(cell);
   return cell;
+}
+
+function syncAdminUserFilterControls(filters) {
+  if (adminUserSearch) adminUserSearch.value = filters.search;
+  if (adminRoleFilter) adminRoleFilter.value = filters.role;
+  if (adminActivityDateFilter) adminActivityDateFilter.value = filters.date;
+  if (activityActionFilter) activityActionFilter.value = filters.action;
+}
+
+function hasAdminUserFilter(filters) {
+  return Boolean(filters.search.trim() || filters.role || filters.date || filters.action);
+}
+
+function renderAdminUsers(users, filters, pagination) {
+  adminUsers.innerHTML = "";
+  userPageInfo.textContent = `${pagination.page} of ${pagination.pageCount}`;
+  userPrevPage.disabled = pagination.page <= 1;
+  userNextPage.disabled = pagination.page >= pagination.pageCount;
+
+  if (!users.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    cell.textContent = hasAdminUserFilter(filters) ? "No users match the current filters." : "No users found.";
+    row.appendChild(cell);
+    adminUsers.appendChild(row);
+    return;
+  }
+
+  users.forEach(user => {
+    const row = document.createElement("tr");
+    appendCell(row, user.id);
+    appendCell(row, user.username);
+
+    const roleCell = document.createElement("td");
+    const roleSelect = document.createElement("select");
+    roleSelect.className = "role-select";
+    roleSelect.dataset.userId = user.id;
+
+    ["user", "admin"].forEach(role => {
+      const option = document.createElement("option");
+      option.value = role;
+      option.textContent = role;
+      option.selected = user.role === role;
+      roleSelect.appendChild(option);
+    });
+
+    roleCell.appendChild(roleSelect);
+    row.appendChild(roleCell);
+
+    appendCell(row, user.activity_count);
+    appendCell(row, formatDateTime(user.last_activity_at));
+
+    const actionCell = document.createElement("td");
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "small-danger-btn";
+    deleteBtn.dataset.userId = user.id;
+    deleteBtn.textContent = "Delete";
+    actionCell.appendChild(deleteBtn);
+    row.appendChild(actionCell);
+
+    roleSelect.addEventListener("change", function () {
+      updateUserRole(user.id, this.value);
+    });
+
+    deleteBtn.addEventListener("click", function () {
+      deleteUser(user.id);
+    });
+
+    adminUsers.appendChild(row);
+  });
 }
 
 function showAuthenticatedView() {
@@ -479,11 +696,30 @@ document.addEventListener("click", function (event) {
   }
 });
 
+function createExpenseQueryString(filters) {
+  const params = new URLSearchParams();
+
+  if (filters.search.trim()) params.set("search", filters.search.trim());
+  if (filters.category) params.set("category", filters.category);
+  if (filters.minAmount !== "") params.set("minAmount", filters.minAmount);
+  if (filters.maxAmount !== "") params.set("maxAmount", filters.maxAmount);
+  if (filters.sort) params.set("sort", filters.sort);
+
+  return params.toString();
+}
+
 async function fetchExpenses() {
+  const requestId = ++expenseRequestId;
+  const { filters } = getAppState();
+
   try {
-    const expenses = await requestJson(API_URL, {
+    const queryString = createExpenseQueryString(filters);
+    const expenses = await requestJson(`${API_URL}?${queryString}`, {
       headers: authHeaders()
     });
+
+    if (requestId !== expenseRequestId) return;
+
     dispatch({ type: "SET_EXPENSES", payload: { expenses } });
   } catch (error) {
     console.error("Failed to fetch expenses:", error);
@@ -534,58 +770,34 @@ async function fetchMonthlySummary() {
   }
 }
 
+function createAdminQueryString(filters, pagination) {
+  const params = new URLSearchParams();
+
+  if (filters.search.trim()) params.set("search", filters.search.trim());
+  if (filters.role) params.set("role", filters.role);
+  if (filters.date) params.set("date", filters.date);
+  if (filters.action) params.set("action", filters.action);
+  params.set("page", pagination.page);
+  params.set("pageSize", pagination.pageSize);
+
+  return params.toString();
+}
+
 async function fetchAdminUsers() {
-  const { activeUser } = getAppState();
+  const { activeUser, adminUserFilters, adminUserPagination } = getAppState();
   if (activeUser?.role !== "admin") return;
 
   try {
-    const users = await requestJson(`${API_BASE}/admin/users`, {
+    const data = await requestJson(`${API_BASE}/admin/users?${createAdminQueryString(adminUserFilters, adminUserPagination)}`, {
       headers: authHeaders()
     });
 
-    adminUsers.innerHTML = "";
-
-    users.forEach(user => {
-      const row = document.createElement("tr");
-      appendCell(row, user.id);
-      appendCell(row, user.username);
-
-      const roleCell = document.createElement("td");
-      const roleSelect = document.createElement("select");
-      roleSelect.className = "role-select";
-      roleSelect.dataset.userId = user.id;
-
-      ["user", "admin"].forEach(role => {
-        const option = document.createElement("option");
-        option.value = role;
-        option.textContent = role;
-        option.selected = user.role === role;
-        roleSelect.appendChild(option);
-      });
-
-      roleCell.appendChild(roleSelect);
-      row.appendChild(roleCell);
-
-      appendCell(row, user.activity_count);
-      appendCell(row, formatDateTime(user.last_activity_at));
-
-      const actionCell = document.createElement("td");
-      const deleteBtn = document.createElement("button");
-      deleteBtn.className = "small-danger-btn";
-      deleteBtn.dataset.userId = user.id;
-      deleteBtn.textContent = "Delete";
-      actionCell.appendChild(deleteBtn);
-      row.appendChild(actionCell);
-
-      roleSelect.addEventListener("change", function () {
-        updateUserRole(user.id, this.value);
-      });
-
-      deleteBtn.addEventListener("click", function () {
-        deleteUser(user.id);
-      });
-
-      adminUsers.appendChild(row);
+    dispatch({
+      type: "SET_ADMIN_USERS",
+      payload: {
+        users: data.users || [],
+        pagination: data.pagination || initialState.adminUserPagination
+      }
     });
   } catch (error) {
     console.error("Failed to fetch users:", error);
@@ -593,23 +805,20 @@ async function fetchAdminUsers() {
 }
 
 async function fetchAdminActivities() {
-  const { activeUser } = getAppState();
+  const { activeUser, adminUserFilters, activityFilters } = getAppState();
   if (activeUser?.role !== "admin") return;
 
   try {
-    const activities = await requestJson(`${API_BASE}/admin/activities`, {
+    const data = await requestJson(`${API_BASE}/admin/activities?${createAdminQueryString(adminUserFilters, activityFilters)}`, {
       headers: authHeaders()
     });
 
-    adminActivities.innerHTML = "";
-
-    activities.forEach(activity => {
-      const row = document.createElement("tr");
-      appendCell(row, formatDateTime(activity.created_at));
-      appendCell(row, `${activity.username} (${activity.role})`);
-      appendCell(row, activity.action);
-      appendCell(row, activity.details || "");
-      adminActivities.appendChild(row);
+    dispatch({
+      type: "SET_ADMIN_ACTIVITIES",
+      payload: {
+        activities: data.activities || [],
+        pagination: data.pagination || initialState.activityFilters
+      }
     });
   } catch (error) {
     console.error("Failed to fetch activities:", error);
@@ -772,43 +981,54 @@ if (confirmDeleteBtn) {
   });
 }
 
-function renderExpenses(expenses) {
-  expenseList.innerHTML = "";
-  let total = 0;
+function getCategoryColors(category) {
+  return CATEGORY_COLORS[category] || {
+    ...CATEGORY_COLORS.default,
+    border: "#b4babf"
+  };
+}
 
-  if (!expenses.length) {
-    const empty = document.createElement("p");
-    empty.className = "empty-state";
-    empty.textContent = "No expenses match your current filters.";
-    expenseList.appendChild(empty);
-    totalAmount.textContent = "0.00";
-    return;
-  }
+function applyCategoryColors(element, category) {
+  const colors = getCategoryColors(category);
+  element.style.setProperty("--expense-bg", colors.bg);
+  element.style.setProperty("--expense-border", colors.border);
+}
 
-  expenses.forEach(function (expense) {
-    total += Number(expense.amount);
+function createExpenseDetail(labelText, valueText, className = "") {
+  const detail = document.createElement("p");
+  detail.className = `expense-detail ${className}`.trim();
 
-    const displayDate = String(expense.expense_date).split("T")[0];
+  const label = document.createElement("span");
+  label.className = "expense-detail-label";
+  label.textContent = `${labelText}: `;
 
-    const expenseItem = document.createElement("div");
-    expenseItem.classList.add("expense-item");
-    expenseItem.setAttribute("data-id", expense.id);
+  const value = document.createElement("span");
+  value.className = "expense-detail-value";
+  value.textContent = valueText;
 
-    const title = document.createElement("h3");
-    title.textContent = expense.title;
+  detail.append(label, value);
+  return detail;
+}
 
-    const category = document.createElement("p");
-    category.textContent = `Category: ${expense.category}`;
+function createExpenseCard(expense, options = {}) {
+  const showActions = options.showActions !== false;
+  const displayDate = String(expense.expense_date).split("T")[0];
+  const expenseItem = document.createElement("div");
+  expenseItem.classList.add("expense-item");
+  expenseItem.setAttribute("data-id", expense.id);
+  applyCategoryColors(expenseItem, expense.category);
 
-    const amount = document.createElement("p");
-    amount.textContent = `Amount: $${Number(expense.amount).toFixed(2)}`;
+  const title = document.createElement("h3");
+  title.textContent = expense.title;
 
-    const date = document.createElement("p");
-    date.textContent = `Date: ${displayDate}`;
+  const category = createExpenseDetail("Category", expense.category || "Uncategorized", "expense-category");
+  const amount = createExpenseDetail("Amount", `$${Number(expense.amount).toFixed(2)}`);
+  const date = createExpenseDetail("Date", displayDate);
+  const description = createExpenseDetail("Description", expense.description || "");
 
-    const description = document.createElement("p");
-    description.textContent = `Description: ${expense.description || ""}`;
+  expenseItem.append(title, category, amount, date, description);
 
+  if (showActions) {
     const editBtn = document.createElement("button");
     editBtn.className = "edit-btn";
     editBtn.textContent = "Edit";
@@ -825,10 +1045,152 @@ function renderExpenses(expenses) {
       dispatch({ type: "START_DELETE", payload: { id: expense.id } });
     });
 
-    expenseItem.append(title, category, amount, date, description, editBtn, deleteBtn);
-    expenseList.appendChild(expenseItem);
-    expenseItem.classList.add("added");
+    expenseItem.append(editBtn, deleteBtn);
+  }
+
+  expenseItem.classList.add("added");
+  return expenseItem;
+}
+
+function sortNewestExpenses(expenses) {
+  return [...expenses].sort((a, b) =>
+    new Date(b.expense_date) - new Date(a.expense_date)
+  );
+}
+
+function groupExpensesByCategory(expenses) {
+  return expenses.reduce((groups, expense) => {
+    const category = expense.category || "Uncategorized";
+    if (!groups[category]) groups[category] = [];
+    groups[category].push(expense);
+    return groups;
+  }, {});
+}
+
+function createCategoryLedger(category, categoryExpenses) {
+  const sortedExpenses = sortNewestExpenses(categoryExpenses);
+  const coverExpense = sortedExpenses[0];
+  const ledger = document.createElement("button");
+  ledger.type = "button";
+  ledger.className = "category-ledger";
+  ledger.setAttribute("aria-label", `Open ${category} ledger with ${sortedExpenses.length} expenses`);
+  applyCategoryColors(ledger, category);
+
+  const cover = createExpenseCard(coverExpense, { showActions: false });
+  cover.classList.add("ledger-cover");
+
+  const counter = document.createElement("span");
+  counter.className = "ledger-counter";
+  counter.textContent = `${sortedExpenses.length} ${sortedExpenses.length === 1 ? "bill" : "bills"}`;
+
+  ledger.append(cover, counter);
+  ledger.addEventListener("click", function () {
+    dispatch({ type: "TOGGLE_CATEGORY_GROUP", payload: { category } });
   });
+  return ledger;
+}
+
+function createLedgerPageButton(className, page, disabled, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `ledger-page-btn ${className}`;
+  button.disabled = disabled;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.addEventListener("click", function () {
+    dispatch({ type: "SET_LEDGER_PAGE", payload: { page } });
+  });
+  return button;
+}
+
+function createExpandedLedger(category, categoryExpenses, ledgerPage) {
+  const orderedExpenses = [...categoryExpenses];
+  const pageCount = Math.max(1, Math.ceil(orderedExpenses.length / LEDGER_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(ledgerPage, 1), pageCount);
+  const startIndex = (currentPage - 1) * LEDGER_PAGE_SIZE;
+  const pageExpenses = orderedExpenses.slice(startIndex, startIndex + LEDGER_PAGE_SIZE);
+  const ledger = document.createElement("section");
+  ledger.className = "category-ledger-open";
+  applyCategoryColors(ledger, category);
+
+  const header = document.createElement("div");
+  header.className = "category-ledger-header";
+
+  const titleWrap = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = `${category} Ledger`;
+
+  const meta = document.createElement("p");
+  meta.textContent = `${orderedExpenses.length} ${orderedExpenses.length === 1 ? "bill" : "bills"}`;
+  titleWrap.append(title, meta);
+
+  const pager = document.createElement("div");
+  pager.className = "ledger-pager";
+
+  const pageLabel = document.createElement("span");
+  pageLabel.className = "ledger-page-label";
+  pageLabel.textContent = `${currentPage} of ${pageCount}`;
+
+  const previousPage = createLedgerPageButton(
+    "ledger-page-prev",
+    currentPage - 1,
+    currentPage === 1,
+    "Previous ledger page"
+  );
+  const nextPage = createLedgerPageButton(
+    "ledger-page-next",
+    currentPage + 1,
+    currentPage === pageCount,
+    "Next ledger page"
+  );
+  pager.append(previousPage, pageLabel, nextPage);
+
+  const foldButton = document.createElement("button");
+  foldButton.type = "button";
+  foldButton.className = "ledger-bookmark";
+  foldButton.textContent = "Fold";
+  foldButton.setAttribute("aria-label", "Fold ledger back into category books");
+  foldButton.addEventListener("click", function () {
+    dispatch({ type: "TOGGLE_CATEGORY_GROUP", payload: { category } });
+  });
+
+  const cards = document.createElement("div");
+  cards.className = "ledger-expenses";
+  pageExpenses.forEach(function (expense) {
+    cards.appendChild(createExpenseCard(expense));
+  });
+
+  header.append(titleWrap, foldButton);
+  ledger.append(header, cards, pager);
+  return ledger;
+}
+
+function renderExpenses(expenses, expandedCategories = {}, ledgerPage = 1) {
+  expenseList.innerHTML = "";
+  expenseList.classList.remove("open-ledger-view");
+  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+
+  if (!expenses.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No expenses match your current filters.";
+    expenseList.appendChild(empty);
+    totalAmount.textContent = "0.00";
+    return;
+  }
+
+  const expensesByCategory = groupExpensesByCategory(expenses);
+  const openCategory = Object.keys(expandedCategories)
+    .find(category => expensesByCategory[category]);
+
+  if (openCategory) {
+    expenseList.classList.add("open-ledger-view");
+    expenseList.appendChild(createExpandedLedger(openCategory, expensesByCategory[openCategory], ledgerPage));
+  } else {
+    Object.entries(expensesByCategory).forEach(function ([category, categoryExpenses]) {
+      expenseList.appendChild(createCategoryLedger(category, categoryExpenses));
+    });
+  }
 
   totalAmount.textContent = total.toFixed(2);
 }
@@ -879,24 +1241,109 @@ document.getElementById("edit-amount").addEventListener("input", function () {
 if (expenseSearch) {
   expenseSearch.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "search", value: this.value } });
+    fetchExpenses();
   });
 }
 
 if (filterCategory) {
   filterCategory.addEventListener("change", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "category", value: this.value } });
+    fetchExpenses();
+  });
+}
+
+if (filterMinAmount) {
+  filterMinAmount.addEventListener("input", function () {
+    dispatch({ type: "SET_FILTER", payload: { name: "minAmount", value: this.value } });
+    fetchExpenses();
+  });
+}
+
+if (filterMaxAmount) {
+  filterMaxAmount.addEventListener("input", function () {
+    dispatch({ type: "SET_FILTER", payload: { name: "maxAmount", value: this.value } });
+    fetchExpenses();
   });
 }
 
 if (sortExpenses) {
   sortExpenses.addEventListener("change", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "sort", value: this.value } });
+    fetchExpenses();
   });
 }
 
 if (clearFiltersBtn) {
   clearFiltersBtn.addEventListener("click", function () {
     dispatch({ type: "CLEAR_FILTERS" });
+    fetchExpenses();
+  });
+}
+
+if (adminUserSearch) {
+  adminUserSearch.addEventListener("input", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "search", value: this.value } });
+    refreshAdmin();
+  });
+}
+
+if (adminRoleFilter) {
+  adminRoleFilter.addEventListener("change", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "role", value: this.value } });
+    refreshAdmin();
+  });
+}
+
+if (adminActivityDateFilter) {
+  adminActivityDateFilter.addEventListener("input", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "date", value: this.value } });
+    refreshAdmin();
+  });
+}
+
+if (activityActionFilter) {
+  activityActionFilter.addEventListener("change", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "action", value: this.value } });
+    refreshAdmin();
+  });
+}
+
+if (adminClearFiltersBtn) {
+  adminClearFiltersBtn.addEventListener("click", function () {
+    dispatch({ type: "CLEAR_ADMIN_USER_FILTERS" });
+    refreshAdmin();
+  });
+}
+
+if (userPrevPage) {
+  userPrevPage.addEventListener("click", function () {
+    const { adminUserPagination } = getAppState();
+    dispatch({ type: "SET_ADMIN_USER_PAGE", payload: { page: Math.max(1, adminUserPagination.page - 1) } });
+    fetchAdminUsers();
+  });
+}
+
+if (userNextPage) {
+  userNextPage.addEventListener("click", function () {
+    const { adminUserPagination } = getAppState();
+    dispatch({ type: "SET_ADMIN_USER_PAGE", payload: { page: Math.min(adminUserPagination.pageCount, adminUserPagination.page + 1) } });
+    fetchAdminUsers();
+  });
+}
+
+if (activityPrevPage) {
+  activityPrevPage.addEventListener("click", function () {
+    const { activityFilters } = getAppState();
+    dispatch({ type: "SET_ACTIVITY_PAGE", payload: { page: Math.max(1, activityFilters.page - 1) } });
+    fetchAdminActivities();
+  });
+}
+
+if (activityNextPage) {
+  activityNextPage.addEventListener("click", function () {
+    const { activityFilters } = getAppState();
+    dispatch({ type: "SET_ACTIVITY_PAGE", payload: { page: Math.min(activityFilters.pageCount, activityFilters.page + 1) } });
+    fetchAdminActivities();
   });
 }
 
