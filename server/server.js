@@ -6,18 +6,84 @@ const db = require("./db");
 
 const app = express();
 const PORT = 3000;
-const JWT_SECRET = process.env.JWT_SECRET || "expense-tracker-dev-secret";
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex");
 const BCRYPT_ROUNDS = 10;
-const ADMIN_ACCOUNTS = [
-  { username: "admin123", password: "123456" },
-  { username: "zzy", password: "654321" }
+const DEFAULT_CATEGORIES = [
+  { name: "Food", bg: "#ead5be", border: "#d4b896" },
+  { name: "Shopping", bg: "hsl(207 51% 83%)", border: "hsl(207 40% 71%)" },
+  { name: "Transport", bg: "hsl(184 51% 83%)", border: "hsl(184 40% 71%)" },
+  { name: "Utilities", bg: "hsl(350 51% 83%)", border: "hsl(350 40% 71%)" }
 ];
+const ADMIN_ACCOUNTS = parseAdminAccounts();
 
 app.use(cors());
 app.use(express.json());
 
 function query(sql, params = []) {
   return db.promise().query(sql, params);
+}
+
+function parseAdminAccounts() {
+  if (process.env.ADMIN_ACCOUNTS) {
+    return process.env.ADMIN_ACCOUNTS
+      .split(";")
+      .map(entry => {
+        const [username, password] = entry.split(":");
+        return { username: username?.trim(), password: password?.trim() };
+      })
+      .filter(account => account.username && account.password);
+  }
+
+  if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
+    return [{
+      username: process.env.ADMIN_USERNAME.trim(),
+      password: process.env.ADMIN_PASSWORD
+    }];
+  }
+
+  return [];
+}
+
+function normalizeCategoryName(name) {
+  return String(name || "").trim();
+}
+
+function extractHslHue(color) {
+  const match = String(color || "").match(/^hsl\((\d{1,3})\s+/);
+  return match ? Number(match[1]) : null;
+}
+
+function hueDistance(a, b) {
+  const distance = Math.abs(a - b);
+  return Math.min(distance, 360 - distance);
+}
+
+function createRandomCategoryColors(existingCategories = []) {
+  const existingHues = existingCategories
+    .map(category => extractHslHue(category.bg_color))
+    .filter(hue => Number.isFinite(hue));
+
+  let hue = Math.floor(Math.random() * 360);
+
+  for (let attempt = 0; attempt < 36; attempt += 1) {
+    const candidate = (hue + attempt * 47) % 360;
+    const differentEnough = existingHues.every(existingHue => hueDistance(candidate, existingHue) >= 28);
+
+    if (differentEnough) {
+      hue = candidate;
+      break;
+    }
+  }
+
+  return {
+    bg: `hsl(${hue} 51% 83%)`,
+    border: `hsl(${hue} 40% 71%)`
+  };
+}
+
+async function categoryExists(category) {
+  const [rows] = await query("SELECT id FROM categories WHERE name = ? LIMIT 1", [category]);
+  return rows.length > 0;
 }
 
 function isValidDate(dateStr) {
@@ -203,6 +269,29 @@ async function initializeAuthTables() {
     )
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      bg_color VARCHAR(40) NOT NULL,
+      border_color VARCHAR(40) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  for (const category of DEFAULT_CATEGORIES) {
+    await query(
+      `
+        INSERT INTO categories (name, bg_color, border_color)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          bg_color = VALUES(bg_color),
+          border_color = VALUES(border_color)
+      `,
+      [category.name, category.bg, category.border]
+    );
+  }
+
   const [expenseColumns] = await query(
     `
       SELECT COLUMN_NAME
@@ -217,16 +306,20 @@ async function initializeAuthTables() {
     await query("ALTER TABLE expenses ADD COLUMN user_id INT NULL AFTER id");
   }
 
-  for (const account of ADMIN_ACCOUNTS) {
-    const adminHash = await hashPassword(account.password);
-    await query(
-      `
-        INSERT INTO users (username, password_hash, role)
-        VALUES (?, ?, 'admin')
-        ON DUPLICATE KEY UPDATE role = 'admin'
-      `,
-      [account.username, adminHash]
-    );
+  if (ADMIN_ACCOUNTS.length) {
+    for (const account of ADMIN_ACCOUNTS) {
+      const adminHash = await hashPassword(account.password);
+      await query(
+        `
+          INSERT INTO users (username, password_hash, role)
+          VALUES (?, ?, 'admin')
+          ON DUPLICATE KEY UPDATE role = 'admin'
+        `,
+        [account.username, adminHash]
+      );
+    }
+  } else {
+    console.warn("No admin seed account configured. Set ADMIN_USERNAME/ADMIN_PASSWORD if you need one.");
   }
 }
 
@@ -405,8 +498,121 @@ app.post("/api/auth/logout", authenticate, async (req, res) => {
   res.json({ message: "Logout recorded" });
 });
 
+app.get("/api/categories", authenticate, async (req, res) => {
+  try {
+    const [categories] = await query(
+      "SELECT id, name, bg_color, border_color, created_at FROM categories ORDER BY name ASC"
+    );
+    res.json(categories);
+  } catch (err) {
+    console.error("Failed to fetch categories:", err);
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
+app.post("/api/categories", authenticate, async (req, res) => {
+  const name = normalizeCategoryName(req.body.name);
+
+  if (!name) {
+    return res.status(400).json({ error: "Category name is required" });
+  }
+
+  try {
+    const [existingCategories] = await query("SELECT bg_color FROM categories");
+    const colors = createRandomCategoryColors(existingCategories);
+    const [result] = await query(
+      "INSERT INTO categories (name, bg_color, border_color) VALUES (?, ?, ?)",
+      [name, colors.bg, colors.border]
+    );
+    await logActivity(req.user.id, "create_category", `Created ledger ${name}`);
+    res.status(201).json({
+      id: result.insertId,
+      name,
+      bg_color: colors.bg,
+      border_color: colors.border
+    });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Ledger already exists" });
+    }
+
+    console.error("Failed to create ledger:", err);
+    res.status(500).json({ error: "Failed to create ledger" });
+  }
+});
+
+app.put("/api/categories/:id", authenticate, async (req, res) => {
+  const { id } = req.params;
+  const name = normalizeCategoryName(req.body.name);
+
+  if (!name) {
+    return res.status(400).json({ error: "Category name is required" });
+  }
+
+  try {
+    const [existingRows] = await query("SELECT name FROM categories WHERE id = ?", [id]);
+    const existing = existingRows[0];
+
+    if (!existing) {
+      return res.status(404).json({ error: "Ledger not found" });
+    }
+
+    const [result] = await query(
+      "UPDATE categories SET name = ? WHERE id = ?",
+      [name, id]
+    );
+
+    if (existing.name !== name) {
+      await query("UPDATE expenses SET category = ? WHERE category = ?", [name, existing.name]);
+    }
+
+    await logActivity(req.user.id, "update_category", `Renamed ledger ${existing.name} to ${name}`);
+    res.json({ message: "Ledger updated successfully", changed: result.changedRows });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Ledger already exists" });
+    }
+
+    console.error("Failed to update ledger:", err);
+    res.status(500).json({ error: "Failed to update ledger" });
+  }
+});
+
+app.delete("/api/categories/:id", authenticate, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [categories] = await query("SELECT name FROM categories WHERE id = ?", [id]);
+    const category = categories[0];
+
+    if (!category) {
+      return res.status(404).json({ error: "Ledger not found" });
+    }
+
+    const [expenseRows] = await query(
+      "SELECT COUNT(*) AS total FROM expenses WHERE category = ?",
+      [category.name]
+    );
+
+    if (Number(expenseRows[0]?.total || 0) > 0) {
+      return res.status(400).json({ error: "Delete or move this ledger's bills first" });
+    }
+
+    await query("DELETE FROM categories WHERE id = ?", [id]);
+    await logActivity(req.user.id, "delete_category", `Deleted ledger ${category.name}`);
+    res.json({ message: "Ledger deleted successfully" });
+  } catch (err) {
+    console.error("Failed to delete ledger:", err);
+    res.status(500).json({ error: "Failed to delete ledger" });
+  }
+});
+
 app.get("/api/expenses", authenticate, async (req, res) => {
   const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc", month = "", id = "" } = req.query;
+  const { page, pageSize, offset } = getPagination({
+    ...req.query,
+    pageSize: req.query.pageSize || 24
+  });
   const where = ["user_id = ?"];
   const params = [req.user.id];
   const searchText = String(search).trim();
@@ -452,24 +658,37 @@ app.get("/api/expenses", authenticate, async (req, res) => {
   }
 
   try {
+    const [countRows] = await query(
+      `
+        SELECT COUNT(*) AS total
+        FROM expenses
+        WHERE ${where.join(" AND ")}
+      `,
+      params
+    );
+    const total = Number(countRows[0]?.total || 0);
     const [expenses] = await query(
       `
         SELECT *
         FROM expenses
         WHERE ${where.join(" AND ")}
         ORDER BY ${sortMap[sort] || sortMap["date-desc"]}
+        LIMIT ? OFFSET ?
       `,
-      params
+      [...params, pageSize, offset]
     );
 
-    res.json(expenses);
+    res.json({
+      expenses,
+      pagination: createPagination(total, page, pageSize)
+    });
   } catch (err) {
     console.error("Failed to fetch expenses:", err);
     res.status(500).json({ error: "Database query failed" });
   }
 });
 
-app.post("/api/expenses", authenticate, (req, res) => {
+app.post("/api/expenses", authenticate, async (req, res) => {
   const { title, category, amount, date, description } = req.body;
 
   if (!title || !category || amount === undefined || !date) {
@@ -490,27 +709,31 @@ app.post("/api/expenses", authenticate, (req, res) => {
     return res.status(400).json({ error: "Future dates cannot be selected" });
   }
 
-  const sql = `
-    INSERT INTO expenses (user_id, title, category, amount, expense_date, description)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `;
-
-  db.query(sql, [req.user.id, title, category, amount, date, description || ""], async (err, result) => {
-    if (err) {
-      console.error("Failed to add expense:", err);
-      return res.status(500).json({ error: "Failed to add expense" });
+  try {
+    if (!(await categoryExists(category))) {
+      return res.status(400).json({ error: "Category does not exist" });
     }
 
-    await logActivity(req.user.id, "create_expense", `Created expense #${result.insertId}: ${title}`);
+    const [result] = await query(
+      `
+        INSERT INTO expenses (user_id, title, category, amount, expense_date, description)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [req.user.id, title, category, amount, date, description || ""]
+    );
 
+    await logActivity(req.user.id, "create_expense", `Created expense #${result.insertId}: ${title}`);
     res.status(201).json({
       message: "Expense added successfully",
       id: result.insertId
     });
-  });
+  } catch (err) {
+    console.error("Failed to add expense:", err);
+    res.status(500).json({ error: "Failed to add expense" });
+  }
 });
 
-app.put("/api/expenses/:id", authenticate, (req, res) => {
+app.put("/api/expenses/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   const { title, category, amount, date, description } = req.body;
 
@@ -532,17 +755,19 @@ app.put("/api/expenses/:id", authenticate, (req, res) => {
     return res.status(400).json({ error: "Future dates cannot be selected" });
   }
 
-  const sql = `
-    UPDATE expenses
-    SET title = ?, category = ?, amount = ?, expense_date = ?, description = ?
-    WHERE id = ? AND user_id = ?
-  `;
-
-  db.query(sql, [title, category, amount, date, description || "", id, req.user.id], async (err, result) => {
-    if (err) {
-      console.error("Failed to update expense:", err);
-      return res.status(500).json({ error: "Failed to update expense" });
+  try {
+    if (!(await categoryExists(category))) {
+      return res.status(400).json({ error: "Category does not exist" });
     }
+
+    const [result] = await query(
+      `
+        UPDATE expenses
+        SET title = ?, category = ?, amount = ?, expense_date = ?, description = ?
+        WHERE id = ? AND user_id = ?
+      `,
+      [title, category, amount, date, description || "", id, req.user.id]
+    );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Expense not found" });
@@ -550,7 +775,10 @@ app.put("/api/expenses/:id", authenticate, (req, res) => {
 
     await logActivity(req.user.id, "update_expense", `Updated expense #${id}: ${title}`);
     res.json({ message: "Expense updated successfully" });
-  });
+  } catch (err) {
+    console.error("Failed to update expense:", err);
+    res.status(500).json({ error: "Failed to update expense" });
+  }
 });
 
 app.delete("/api/expenses/:id", authenticate, (req, res) => {
@@ -846,7 +1074,10 @@ initializeAuthTables()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Server running at http://localhost:${PORT}`);
-      console.log("Admin accounts ready: admin123 / 123456, zzy / 654321");
+      if (!process.env.JWT_SECRET) {
+        console.warn("JWT_SECRET is not set; using a temporary development secret for this server run.");
+      }
+      console.log(`Admin seed accounts configured: ${ADMIN_ACCOUNTS.length}`);
     });
   })
   .catch((err) => {

@@ -216,6 +216,105 @@ body {
   font-size: 15px;
 }
 
+.category-input-row,
+.category-manager-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.category-input-row {
+  grid-template-columns: minmax(0, 1fr) 46px;
+  align-items: center;
+}
+
+#expense-form .category-input-row button {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  min-height: 46px;
+  margin: 0;
+}
+
+.category-input-row select,
+.category-manager-form input {
+  margin: 0;
+}
+
+.icon-tool-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  margin: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: #6f83a6 !important;
+  color: #ffffff !important;
+  font-size: 19px;
+}
+
+.category-manager-form {
+  margin: 8px 0 16px;
+}
+
+.category-manager-form .modal-actions {
+  margin-top: 0;
+}
+
+.category-manager-list {
+  display: grid;
+  gap: 10px;
+}
+
+.category-manager-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.88);
+}
+
+.category-manager-item > span {
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.category-manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-swatches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.small-tool-btn {
+  width: auto;
+  min-width: 70px;
+  margin: 0 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #6f83a6;
+  color: #ffffff;
+  font-size: 14px;
+}
+
 .pagination-controls {
   display: flex;
   justify-content: center;
@@ -819,7 +918,8 @@ button:active {
 }
 
 #save-edit,
-#save-account {
+#save-account,
+#save-category {
   background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
   color: white !important;
 }
@@ -945,6 +1045,19 @@ button:active {
 
   .admin-user-controls {
     grid-template-columns: 1fr;
+  }
+
+  .category-manager-form,
+  .category-manager-item {
+    grid-template-columns: 1fr;
+  }
+
+  .category-manager-actions {
+    justify-content: stretch;
+  }
+
+  .category-manager-actions button {
+    flex: 1;
   }
 
   .category-group-header {
@@ -1862,12 +1975,14 @@ h2::after {
 }
 
 #cancel-edit,
+#cancel-category-edit,
 #cancel-delete {
   background: var(--ui-soft-neutral) !important;
   color: var(--ui-neutral-text) !important;
 }
 
 #cancel-edit:hover,
+#cancel-category-edit:hover,
 #cancel-delete:hover {
   background: var(--ui-soft-neutral-hover) !important;
 }

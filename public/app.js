@@ -3,13 +3,14 @@ const API_URL = `${API_BASE}/expenses`;
 const LEDGER_PAGE_SIZE = 6;
 let expenseRequestId = 0;
 
-const CATEGORY_COLORS = {
+const DEFAULT_CATEGORY_COLORS = {
   'Food':          { bg: '#ead5be', border: '#d4b896' },
   'Shopping':      { bg: 'hsl(207 51% 83%)', border: 'hsl(207 40% 71%)' },
   'Transport':     { bg: 'hsl(184 51% 83%)', border: 'hsl(184 40% 71%)' },
   'Utilities':     { bg: 'hsl(350 51% 83%)', border: 'hsl(350 40% 71%)' },
   'default':       { bg: 'hsl(210 20% 83%)', border: 'hsl(210 18% 71%)' },
 };
+let categoryColors = { ...DEFAULT_CATEGORY_COLORS };
 
 let summaryMonthlyData = [];
 let summarySelectedMonthExpenses = [];
@@ -44,6 +45,15 @@ const logoutAccountBtn = document.getElementById("logout-account");
 const adminPanel = document.getElementById("admin-panel");
 const adminUsers = document.getElementById("admin-users");
 const adminActivities = document.getElementById("admin-activities");
+const manageCategoriesBtn = document.getElementById("manage-categories");
+const categoryModal = document.getElementById("category-modal");
+const categoryForm = document.getElementById("category-form");
+const categoryId = document.getElementById("category-id");
+const categoryName = document.getElementById("category-name");
+const userCategories = document.getElementById("user-categories");
+const saveCategoryBtn = document.getElementById("save-category");
+const cancelCategoryEditBtn = document.getElementById("cancel-category-edit");
+const closeCategoryModalBtn = document.getElementById("close-category-modal");
 const adminUserSearch = document.getElementById("admin-user-search");
 const adminRoleFilter = document.getElementById("admin-role-filter");
 const adminActivityDateFilter = document.getElementById("admin-activity-date-filter");
@@ -58,6 +68,7 @@ const activityPageInfo = document.getElementById("activity-page-info");
 const expenseWorkspace = document.getElementById("expense-workspace");
 
 const form = document.getElementById("expense-form");
+const categoryInput = document.getElementById("category");
 const expenseList = document.getElementById("expense-list");
 const totalAmount = document.getElementById("total-amount");
 const summaryYearBtn = document.getElementById("summary-year-btn");
@@ -74,6 +85,9 @@ const filterMinAmount = document.getElementById("filter-min-amount");
 const filterMaxAmount = document.getElementById("filter-max-amount");
 const sortExpenses = document.getElementById("sort-expenses");
 const clearFiltersBtn = document.getElementById("clear-filters");
+const expensePrevPage = document.getElementById("expense-prev-page");
+const expenseNextPage = document.getElementById("expense-next-page");
+const expensePageInfo = document.getElementById("expense-page-info");
 
 const editModal = document.getElementById("edit-modal");
 const editForm = document.getElementById("edit-form");
@@ -92,7 +106,14 @@ const confirmDeleteBtn = document.getElementById("confirm-delete");
 const initialState = {
   authToken: localStorage.getItem("expense_token"),
   activeUser: JSON.parse(localStorage.getItem("expense_user") || "null"),
+  categories: [],
   expenses: [],
+  expensePagination: {
+    page: 1,
+    pageSize: 24,
+    pageCount: 1,
+    total: 0
+  },
   expandedCategories: {},
   ledgerPage: 1,
   adminUserRecords: [],
@@ -141,7 +162,9 @@ function AppReducer(state, action) {
         ...state,
         authToken: null,
         activeUser: null,
+        categories: [],
         expenses: [],
+        expensePagination: initialState.expensePagination,
         expandedCategories: {},
         ledgerPage: 1,
         adminUserRecords: [],
@@ -152,10 +175,16 @@ function AppReducer(state, action) {
         editingExpense: null,
         deleteTargetId: null
       };
+    case "SET_CATEGORIES":
+      return {
+        ...state,
+        categories: action.payload.categories
+      };
     case "SET_EXPENSES":
       return {
         ...state,
         expenses: action.payload.expenses,
+        expensePagination: action.payload.pagination || state.expensePagination,
         ledgerPage: 1
       };
     case "SET_FILTER":
@@ -168,6 +197,10 @@ function AppReducer(state, action) {
         return {
           ...state,
           filters: nextFilters,
+          expensePagination: {
+            ...state.expensePagination,
+            page: 1
+          },
           expandedCategories: nextFilters.category
             ? { [nextFilters.category]: true }
             : {},
@@ -182,6 +215,10 @@ function AppReducer(state, action) {
           month: action.payload.month || "",
           expenseId: action.payload.expenseId || ""
         },
+        expensePagination: {
+          ...state.expensePagination,
+          page: 1
+        },
         expandedCategories: {},
         ledgerPage: 1
       };
@@ -192,6 +229,10 @@ function AppReducer(state, action) {
           ...initialState.filters,
           month: state.filters.month,
           expenseId: state.filters.expenseId
+        },
+        expensePagination: {
+          ...state.expensePagination,
+          page: 1
         },
         expandedCategories: {},
         ledgerPage: 1
@@ -216,6 +257,14 @@ function AppReducer(state, action) {
       return {
         ...state,
         ledgerPage: action.payload.page
+      };
+    case "SET_EXPENSE_PAGE":
+      return {
+        ...state,
+        expensePagination: {
+          ...state.expensePagination,
+          page: action.payload.page
+        }
       };
     case "SET_ADMIN_ACTIVITIES":
       return {
@@ -342,6 +391,14 @@ function renderAppState(state, previousState, action) {
     syncFilterControls(state.filters);
   }
 
+  if (action.type === "SET_CATEGORIES") {
+    syncCategoryState(state.categories);
+    renderUserCategories(state.categories);
+    if (state.expenses.length) {
+      renderExpenses(state.expenses, state.expandedCategories, state.ledgerPage);
+    }
+  }
+
   if (action.type === "SET_SUMMARY_EXPENSE_FILTER") {
     syncFilterControls(state.filters);
   }
@@ -349,6 +406,7 @@ function renderAppState(state, previousState, action) {
   if (action.type === "SET_EXPENSES" || action.type === "TOGGLE_CATEGORY_GROUP" || action.type === "SET_LEDGER_PAGE") {
     syncFilterControls(state.filters);
     renderExpenses(state.expenses, state.expandedCategories, state.ledgerPage);
+    renderExpensePagination(state.expensePagination);
   }
 
   if (action.type === "SET_ADMIN_ACTIVITIES") {
@@ -551,6 +609,107 @@ function appendCell(row, value) {
   cell.textContent = value;
   row.appendChild(cell);
   return cell;
+}
+
+function setSelectOptions(select, categories, firstOptionText, firstOptionValue = "") {
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = "";
+
+  const firstOption = document.createElement("option");
+  firstOption.value = firstOptionValue;
+  firstOption.textContent = firstOptionText;
+  select.appendChild(firstOption);
+
+  categories.forEach(category => {
+    const option = document.createElement("option");
+    option.value = category.name;
+    option.textContent = category.name;
+    select.appendChild(option);
+  });
+
+  if ([...select.options].some(option => option.value === currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function syncCategoryState(categories) {
+  categoryColors = {
+    ...DEFAULT_CATEGORY_COLORS,
+    ...categories.reduce((colors, category) => {
+      colors[category.name] = {
+        bg: category.bg_color,
+        border: category.border_color
+      };
+      return colors;
+    }, {})
+  };
+
+  setSelectOptions(categoryInput, categories, "Select category");
+  setSelectOptions(editCategory, categories, "Select category");
+  setSelectOptions(filterCategory, categories, "All categories");
+}
+
+function renderUserCategories(categories) {
+  if (!userCategories) return;
+  userCategories.innerHTML = "";
+
+  if (!categories.length) {
+    const empty = document.createElement("p");
+    empty.className = "summary-empty";
+    empty.textContent = "No ledgers found.";
+    userCategories.appendChild(empty);
+    return;
+  }
+
+  categories.forEach(category => {
+    const item = document.createElement("div");
+    item.className = "category-manager-item";
+    const name = document.createElement("span");
+    name.textContent = category.name;
+
+    const swatches = document.createElement("div");
+    swatches.className = "category-swatches";
+    [category.bg_color, category.border_color].forEach(color => {
+      const swatch = document.createElement("span");
+      swatch.className = "category-swatch";
+      swatch.style.background = color;
+      swatch.title = color;
+      swatches.appendChild(swatch);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "category-manager-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "small-tool-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", function () {
+      categoryId.value = category.id;
+      categoryName.value = category.name;
+      cancelCategoryEditBtn.classList.remove("hidden");
+      categoryName.focus();
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "small-danger-btn";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", function () {
+      deleteCategory(category.id);
+    });
+
+    actions.append(editBtn, deleteBtn);
+    item.append(swatches, name, actions);
+    userCategories.appendChild(item);
+  });
+}
+
+function renderExpensePagination(pagination) {
+  if (!expensePageInfo || !expensePrevPage || !expenseNextPage) return;
+  expensePageInfo.textContent = `${pagination.page} of ${pagination.pageCount}`;
+  expensePrevPage.disabled = pagination.page <= 1;
+  expenseNextPage.disabled = pagination.page >= pagination.pageCount;
 }
 
 function syncAdminUserFilterControls(filters) {
@@ -842,9 +1001,28 @@ accountModal.addEventListener("click", function (event) {
   }
 });
 
+if (manageCategoriesBtn) {
+  manageCategoriesBtn.addEventListener("click", openCategoryModal);
+}
+
+if (closeCategoryModalBtn) {
+  closeCategoryModalBtn.addEventListener("click", closeCategoryModal);
+}
+
+if (categoryModal) {
+  categoryModal.addEventListener("click", function (event) {
+    if (event.target === categoryModal) {
+      closeCategoryModal();
+    }
+  });
+}
+
 document.addEventListener("keydown", function (event) {
   if (event.key === "Escape" && !accountModal.classList.contains("hidden")) {
     closeAccountModal();
+  }
+  if (event.key === "Escape" && categoryModal && !categoryModal.classList.contains("hidden")) {
+    closeCategoryModal();
   }
 });
 
@@ -863,7 +1041,7 @@ document.addEventListener("click", function (event) {
   summaryYearBtn.setAttribute("aria-expanded", "false");
 });
 
-function createExpenseQueryString(filters) {
+function createExpenseQueryString(filters, pagination) {
   const params = new URLSearchParams();
 
   if (filters.search.trim()) params.set("search", filters.search.trim());
@@ -873,6 +1051,10 @@ function createExpenseQueryString(filters) {
   if (filters.sort) params.set("sort", filters.sort);
   if (filters.month) params.set("month", filters.month);
   if (filters.expenseId) params.set("id", filters.expenseId);
+  if (pagination) {
+    params.set("page", pagination.page);
+    params.set("pageSize", pagination.pageSize);
+  }
 
   return params.toString();
 }
@@ -893,19 +1075,27 @@ function createSummaryMonthExpenseQueryString(month) {
 
 async function fetchExpenses() {
   const requestId = ++expenseRequestId;
-  const { filters } = getAppState();
+  const { filters, expensePagination } = getAppState();
 
   try {
-    const queryString = createExpenseQueryString(filters);
-    const expenses = await requestJson(`${API_URL}?${queryString}`, {
+    const queryString = createExpenseQueryString(filters, expensePagination);
+    const data = await requestJson(`${API_URL}?${queryString}`, {
       headers: authHeaders()
     });
 
     if (requestId !== expenseRequestId) return;
 
-    dispatch({ type: "SET_EXPENSES", payload: { expenses } });
+    const expenses = Array.isArray(data) ? data : (data.expenses || []);
+    dispatch({
+      type: "SET_EXPENSES",
+      payload: {
+        expenses,
+        pagination: data.pagination || expensePagination
+      }
+    });
   } catch (error) {
     console.error("Failed to fetch expenses:", error);
+    showToast(error.message || "Failed to fetch expenses");
   }
 }
 
@@ -931,23 +1121,15 @@ async function refreshExpenseFilters() {
   refreshSelectedSummaryMonthExpenses();
 }
 
-async function fetchCategorySummary() {
+async function fetchCategories() {
   try {
-    const data = await requestJson(`${API_BASE}/summary/category`, {
+    const categories = await requestJson(`${API_BASE}/categories`, {
       headers: authHeaders()
     });
-
-    const summaryEl = document.getElementById("category-summary");
-    if (!summaryEl) return;
-    summaryEl.innerHTML = "";
-
-    data.forEach(item => {
-      const p = document.createElement("p");
-      p.textContent = `${item.category}: $${Number(item.total).toFixed(2)}`;
-      summaryEl.appendChild(p);
-    });
+    dispatch({ type: "SET_CATEGORIES", payload: { categories: Array.isArray(categories) ? categories : [] } });
   } catch (error) {
-    console.error("Failed to fetch category summary:", error);
+    console.error("Failed to fetch categories:", error);
+    showToast(error.message || "Failed to fetch categories");
   }
 }
 
@@ -977,9 +1159,7 @@ function renderSummaryYearMenu(years) {
       button.classList.toggle("active", year === selectedSummaryYear);
       button.addEventListener("click", function () {
         selectedSummaryYear = year;
-        selectedSummaryMonth = "";
-        selectedSummaryExpenseId = "";
-        summarySelectedMonthExpenses = [];
+        clearSummarySelectionState();
         summaryYearMenu.classList.add("hidden");
         summaryYearBtn.setAttribute("aria-expanded", "false");
         dispatch({ type: "SET_SUMMARY_EXPENSE_FILTER", payload: { month: "", expenseId: "" } });
@@ -1033,11 +1213,10 @@ function getSummaryMonthTotal(month) {
   return item ? Number(item.total) : 0;
 }
 
-function resetSummarySelection() {
+function clearSummarySelectionState() {
   selectedSummaryMonth = "";
   selectedSummaryExpenseId = "";
   summarySelectedMonthExpenses = [];
-  renderInteractiveSummary();
 }
 
 async function selectSummaryMonth(month) {
@@ -1319,6 +1498,64 @@ async function deleteUser(userId) {
   }
 }
 
+function resetCategoryForm() {
+  if (!categoryForm) return;
+  categoryForm.reset();
+  categoryId.value = "";
+  saveCategoryBtn.textContent = "Save";
+  cancelCategoryEditBtn.classList.add("hidden");
+}
+
+function openCategoryModal() {
+  resetCategoryForm();
+  renderUserCategories(getAppState().categories);
+  showModal(categoryModal);
+}
+
+function closeCategoryModal() {
+  hideModal(categoryModal, resetCategoryForm);
+}
+
+async function saveCategory() {
+  const editing = Boolean(categoryId.value);
+  const url = editing
+    ? `${API_BASE}/categories/${categoryId.value}`
+    : `${API_BASE}/categories`;
+
+  try {
+    await requestJson(url, {
+      method: editing ? "PUT" : "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        name: categoryName.value.trim()
+      })
+    });
+
+    resetCategoryForm();
+    await fetchCategories();
+    await fetchExpenses();
+    showToast(editing ? "Category updated successfully" : "Category added successfully");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function deleteCategory(categoryIdValue) {
+  if (!confirm("Delete this ledger? Ledgers with bills cannot be deleted.")) return;
+
+  try {
+    await requestJson(`${API_BASE}/categories/${categoryIdValue}`, {
+      method: "DELETE",
+      headers: authHeaders()
+    });
+
+    await fetchCategories();
+    showToast("Category deleted successfully");
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 function refreshAdmin() {
   fetchAdminUsers();
   fetchAdminActivities();
@@ -1333,6 +1570,7 @@ function refreshAll() {
     return;
   }
 
+  fetchCategories();
   fetchExpenses();
   fetchMonthlySummary();
 }
@@ -1349,7 +1587,7 @@ form.addEventListener("submit", async function (event) {
 
   const expense = {
     title: document.getElementById("title").value,
-    category: document.getElementById("category").value,
+    category: categoryInput.value,
     amount: parseFloat(amountValue).toFixed(2),
     date: dateValue,
     description: document.getElementById("description").value
@@ -1367,8 +1605,20 @@ form.addEventListener("submit", async function (event) {
     showToast("Expense added successfully");
   } catch (error) {
     console.error("Failed to add expense:", error);
+    showToast(error.message || "Failed to add expense");
   }
 });
+
+if (categoryForm) {
+  categoryForm.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    await saveCategory();
+  });
+}
+
+if (cancelCategoryEditBtn) {
+  cancelCategoryEditBtn.addEventListener("click", resetCategoryForm);
+}
 
 if (editCancelBtn) {
   editCancelBtn.addEventListener("click", function () {
@@ -1404,6 +1654,7 @@ if (editForm) {
       showToast("Expense updated successfully");
     } catch (error) {
       console.error("Failed to update expense:", error);
+      showToast(error.message || "Failed to update expense");
     }
   });
 }
@@ -1438,14 +1689,15 @@ if (confirmDeleteBtn) {
         showToast("Expense deleted successfully");
       } catch (error) {
         console.error("Failed to delete expense:", error);
+        showToast(error.message || "Failed to delete expense");
       }
     }, 300);
   });
 }
 
 function getCategoryColors(category) {
-  return CATEGORY_COLORS[category] || {
-    ...CATEGORY_COLORS.default,
+  return categoryColors[category] || {
+    ...DEFAULT_CATEGORY_COLORS.default,
     border: "#b4babf"
   };
 }
@@ -1769,6 +2021,22 @@ if (clearFiltersBtn) {
   clearFiltersBtn.addEventListener("click", function () {
     dispatch({ type: "CLEAR_FILTERS" });
     refreshExpenseFilters();
+  });
+}
+
+if (expensePrevPage) {
+  expensePrevPage.addEventListener("click", function () {
+    const { expensePagination } = getAppState();
+    dispatch({ type: "SET_EXPENSE_PAGE", payload: { page: Math.max(1, expensePagination.page - 1) } });
+    fetchExpenses();
+  });
+}
+
+if (expenseNextPage) {
+  expenseNextPage.addEventListener("click", function () {
+    const { expensePagination } = getAppState();
+    dispatch({ type: "SET_EXPENSE_PAGE", payload: { page: Math.min(expensePagination.pageCount, expensePagination.page + 1) } });
+    fetchExpenses();
   });
 }
 
