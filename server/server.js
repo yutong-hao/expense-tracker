@@ -371,11 +371,11 @@ app.put("/api/auth/profile", authenticate, async (req, res) => {
 });
 
 app.post("/api/auth/change-password", async (req, res) => {
-  const { username, currentPassword, newPassword } = req.body;
+  const { username, newPassword } = req.body;
   const cleanUsername = String(username || "").trim();
 
-  if (!cleanUsername || !currentPassword || !newPassword) {
-    return res.status(400).json({ error: "Username, current password, and new password are required" });
+  if (!cleanUsername || !newPassword) {
+    return res.status(400).json({ error: "Username and new password are required" });
   }
 
   if (String(newPassword).length < 6) {
@@ -388,10 +388,6 @@ app.post("/api/auth/change-password", async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ error: "Username not found" });
-    }
-
-    if (!(await verifyPassword(currentPassword, user.password_hash))) {
-      return res.status(400).json({ error: "Current password is incorrect" });
     }
 
     await query("UPDATE users SET password_hash = ? WHERE id = ?", [await hashPassword(newPassword), user.id]);
@@ -410,12 +406,13 @@ app.post("/api/auth/logout", authenticate, async (req, res) => {
 });
 
 app.get("/api/expenses", authenticate, async (req, res) => {
-  const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc" } = req.query;
+  const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc", month = "", id = "" } = req.query;
   const where = ["user_id = ?"];
   const params = [req.user.id];
   const searchText = String(search).trim();
   const minValue = Number.parseFloat(minAmount);
   const maxValue = Number.parseFloat(maxAmount);
+  const expenseId = Number.parseInt(id, 10);
   const sortMap = {
     "date-desc": "expense_date DESC, id DESC",
     "date-asc": "expense_date ASC, id ASC",
@@ -432,6 +429,16 @@ app.get("/api/expenses", authenticate, async (req, res) => {
   if (category) {
     where.push("category = ?");
     params.push(category);
+  }
+
+  if (/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(String(month))) {
+    where.push("SUBSTRING(expense_date, 1, 7) = ?");
+    params.push(month);
+  }
+
+  if (Number.isInteger(expenseId) && expenseId > 0) {
+    where.push("id = ?");
+    params.push(expenseId);
   }
 
   if (Number.isFinite(minValue)) {
@@ -601,6 +608,29 @@ app.get("/api/summary/monthly", authenticate, async (req, res) => {
   } catch (err) {
     console.error("MONTHLY ERROR:", err);
     res.status(500).json({ error: "Failed to fetch monthly summary" });
+  }
+});
+
+app.get("/api/summary/month-expenses", authenticate, async (req, res) => {
+  const month = String(req.query.month || "");
+
+  if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month)) {
+    return res.status(400).json({ error: "Month must be in YYYY-MM format" });
+  }
+
+  try {
+    const [rows] = await query(`
+      SELECT id, title, category, amount, expense_date, description, created_at
+      FROM expenses
+      WHERE user_id = ?
+        AND SUBSTRING(expense_date, 1, 7) = ?
+      ORDER BY expense_date DESC, id DESC
+    `, [req.user.id, month]);
+
+    res.json(rows);
+  } catch (err) {
+    console.error("MONTH EXPENSES ERROR:", err);
+    res.status(500).json({ error: "Failed to fetch month expenses" });
   }
 });
 

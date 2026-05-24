@@ -5,14 +5,17 @@ let expenseRequestId = 0;
 
 const CATEGORY_COLORS = {
   'Food':          { bg: '#ead5be', border: '#d4b896' },
-  'Shopping':      { bg: '#bdd0e0', border: '#9ab8d0' },
-  'Transport':     { bg: '#c2d4c2', border: '#9fbf9f' },
-  'Entertainment': { bg: '#e0c4c8', border: '#cba4aa' },
-  'Health':        { bg: '#b8d4d0', border: '#90bcb8' },
-  'Utilities':     { bg: '#ddd8b0', border: '#c8c088' },
-  'Education':     { bg: '#c2d4cc', border: '#9ec0b4' },
-  'default':       { bg: '#d2d6d8', border: '#b4babе' },
+  'Shopping':      { bg: 'hsl(207 51% 83%)', border: 'hsl(207 40% 71%)' },
+  'Transport':     { bg: 'hsl(184 51% 83%)', border: 'hsl(184 40% 71%)' },
+  'Utilities':     { bg: 'hsl(350 51% 83%)', border: 'hsl(350 40% 71%)' },
+  'default':       { bg: 'hsl(210 20% 83%)', border: 'hsl(210 18% 71%)' },
 };
+
+let summaryMonthlyData = [];
+let summarySelectedMonthExpenses = [];
+let selectedSummaryYear = String(new Date().getFullYear());
+let selectedSummaryMonth = "";
+let selectedSummaryExpenseId = "";
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -26,18 +29,18 @@ const showRegisterBtn = document.getElementById("show-register");
 const showLoginBtn = document.getElementById("show-login");
 const showChangePasswordBtn = document.getElementById("show-change-password");
 const showLoginFromPasswordBtn = document.getElementById("show-login-from-password");
-const statusMenuBtn = document.getElementById("status-menu-btn");
-const statusMenuOptions = document.getElementById("status-menu-options");
-const statusToggleOption = document.getElementById("status-toggle-option");
 const currentUsername = document.getElementById("current-username");
 const currentRole = document.getElementById("current-role");
+const currentStatus = document.getElementById("current-status");
 const accountMenuBtn = document.getElementById("account-menu-btn");
 const accountModal = document.getElementById("account-modal");
 const accountForm = document.getElementById("account-form");
 const accountUsername = document.getElementById("account-username");
 const accountCurrentPassword = document.getElementById("account-current-password");
 const accountNewPassword = document.getElementById("account-new-password");
-const cancelAccountBtn = document.getElementById("cancel-account");
+const closeAccountBtn = document.getElementById("close-account");
+const switchAccountBtn = document.getElementById("switch-account");
+const logoutAccountBtn = document.getElementById("logout-account");
 const adminPanel = document.getElementById("admin-panel");
 const adminUsers = document.getElementById("admin-users");
 const adminActivities = document.getElementById("admin-activities");
@@ -57,6 +60,12 @@ const expenseWorkspace = document.getElementById("expense-workspace");
 const form = document.getElementById("expense-form");
 const expenseList = document.getElementById("expense-list");
 const totalAmount = document.getElementById("total-amount");
+const summaryYearBtn = document.getElementById("summary-year-btn");
+const summaryYearLabel = document.getElementById("summary-year-label");
+const summaryYearMenu = document.getElementById("summary-year-menu");
+const monthlySummary = document.getElementById("monthly-summary");
+const summaryLineChart = document.getElementById("summary-line-chart");
+const summaryMonthExpenses = document.getElementById("summary-month-expenses");
 const amountInput = document.getElementById("amount");
 const expenseDate = document.getElementById("date");
 const expenseSearch = document.getElementById("expense-search");
@@ -111,7 +120,9 @@ const initialState = {
     category: "",
     minAmount: "",
     maxAmount: "",
-    sort: "date-desc"
+    sort: "date-desc",
+    month: "",
+    expenseId: ""
   },
   editingExpense: null,
   deleteTargetId: null
@@ -148,18 +159,39 @@ function AppReducer(state, action) {
         ledgerPage: 1
       };
     case "SET_FILTER":
+      {
+        const nextFilters = {
+          ...state.filters,
+          [action.payload.name]: action.payload.value,
+          month: "",
+          expenseId: ""
+        };
+
+        return {
+          ...state,
+          filters: nextFilters,
+          expandedCategories: action.payload.name === "category" && action.payload.value
+            ? { [action.payload.value]: true }
+            : {},
+          ledgerPage: 1
+        };
+      }
+    case "SET_SUMMARY_EXPENSE_FILTER":
       return {
         ...state,
         filters: {
           ...state.filters,
-          [action.payload.name]: action.payload.value
+          month: action.payload.month || "",
+          expenseId: action.payload.expenseId || ""
         },
+        expandedCategories: {},
         ledgerPage: 1
       };
     case "CLEAR_FILTERS":
       return {
         ...state,
         filters: initialState.filters,
+        expandedCategories: {},
         ledgerPage: 1
       };
     case "TOGGLE_CATEGORY_GROUP":
@@ -305,6 +337,10 @@ function renderAppState(state, previousState, action) {
   }
 
   if (action.type === "SET_FILTER" || action.type === "CLEAR_FILTERS") {
+    syncFilterControls(state.filters);
+  }
+
+  if (action.type === "SET_SUMMARY_EXPENSE_FILTER") {
     syncFilterControls(state.filters);
   }
 
@@ -592,14 +628,11 @@ function showAuthenticatedView() {
   authView.classList.toggle("hidden", signedIn);
   appView.classList.toggle("hidden", !signedIn);
 
-  statusMenuBtn.textContent = signedIn ? "Online" : "Offline";
-  statusMenuBtn.classList.toggle("online", signedIn);
-  statusMenuBtn.classList.toggle("offline", !signedIn);
-  statusToggleOption.textContent = signedIn ? "Offline" : "Online";
-  statusToggleOption.classList.toggle("online", !signedIn);
-  statusToggleOption.classList.toggle("offline", signedIn);
-  statusMenuOptions.classList.add("hidden");
-  statusMenuBtn.setAttribute("aria-expanded", "false");
+  if (currentStatus) {
+    currentStatus.textContent = signedIn ? "Online" : "Offline";
+    currentStatus.classList.toggle("online", signedIn);
+    currentStatus.classList.toggle("offline", !signedIn);
+  }
 
   if (!signedIn) return;
 
@@ -708,7 +741,6 @@ changePasswordForm.addEventListener("submit", async function (event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username: document.getElementById("change-password-username").value.trim(),
-        currentPassword: document.getElementById("change-password-current").value,
         newPassword: document.getElementById("change-password-new").value
       })
     });
@@ -721,7 +753,9 @@ changePasswordForm.addEventListener("submit", async function (event) {
   }
 });
 
-async function goOffline() {
+async function goOffline(options = {}) {
+  const showMessage = options.showMessage !== false;
+
   try {
     await requestJson(`${API_BASE}/auth/logout`, {
       method: "POST",
@@ -732,42 +766,43 @@ async function goOffline() {
   }
 
   clearSession();
-  showToast("Logged out");
-}
-
-statusMenuBtn.addEventListener("click", function () {
-  const open = statusMenuOptions.classList.toggle("hidden") === false;
-  statusMenuBtn.setAttribute("aria-expanded", String(open));
-});
-
-statusToggleOption.addEventListener("click", async function () {
-  const { authToken } = getAppState();
-
-  if (authToken) {
-    await goOffline();
-    return;
+  if (showMessage) {
+    showToast("Logged out");
   }
-
-  showAuthMode("login");
-  showAuthenticatedView();
-});
+}
 
 function openAccountModal() {
   const { activeUser } = getAppState();
   accountUsername.value = activeUser?.username || "";
   accountCurrentPassword.value = "";
   accountNewPassword.value = "";
+  accountMenuBtn.setAttribute("aria-expanded", "true");
   showModal(accountModal);
 }
 
 function closeAccountModal() {
+  accountMenuBtn.setAttribute("aria-expanded", "false");
   hideModal(accountModal, function () {
     accountForm.reset();
   });
 }
 
 accountMenuBtn.addEventListener("click", openAccountModal);
-cancelAccountBtn.addEventListener("click", closeAccountModal);
+closeAccountBtn.addEventListener("click", closeAccountModal);
+
+switchAccountBtn.addEventListener("click", async function () {
+  closeAccountModal();
+  await goOffline({ showMessage: false });
+  showAuthMode("login");
+  loginForm.reset();
+  document.getElementById("login-username").focus();
+  showToast("Choose another account");
+});
+
+logoutAccountBtn.addEventListener("click", async function () {
+  closeAccountModal();
+  await goOffline();
+});
 
 accountForm.addEventListener("submit", async function (event) {
   event.preventDefault();
@@ -805,11 +840,25 @@ accountModal.addEventListener("click", function (event) {
   }
 });
 
-document.addEventListener("click", function (event) {
-  if (!statusMenuBtn.contains(event.target) && !statusMenuOptions.contains(event.target)) {
-    statusMenuOptions.classList.add("hidden");
-    statusMenuBtn.setAttribute("aria-expanded", "false");
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape" && !accountModal.classList.contains("hidden")) {
+    closeAccountModal();
   }
+});
+
+if (summaryYearBtn) {
+  summaryYearBtn.addEventListener("click", function () {
+    const open = summaryYearMenu.classList.toggle("hidden") === false;
+    summaryYearBtn.setAttribute("aria-expanded", String(open));
+  });
+}
+
+document.addEventListener("click", function (event) {
+  if (!summaryYearBtn || !summaryYearMenu) return;
+  if (summaryYearBtn.contains(event.target) || summaryYearMenu.contains(event.target)) return;
+
+  summaryYearMenu.classList.add("hidden");
+  summaryYearBtn.setAttribute("aria-expanded", "false");
 });
 
 function createExpenseQueryString(filters) {
@@ -820,6 +869,8 @@ function createExpenseQueryString(filters) {
   if (filters.minAmount !== "") params.set("minAmount", filters.minAmount);
   if (filters.maxAmount !== "") params.set("maxAmount", filters.maxAmount);
   if (filters.sort) params.set("sort", filters.sort);
+  if (filters.month) params.set("month", filters.month);
+  if (filters.expenseId) params.set("id", filters.expenseId);
 
   return params.toString();
 }
@@ -849,6 +900,7 @@ async function fetchCategorySummary() {
     });
 
     const summaryEl = document.getElementById("category-summary");
+    if (!summaryEl) return;
     summaryEl.innerHTML = "";
 
     data.forEach(item => {
@@ -861,26 +913,274 @@ async function fetchCategorySummary() {
   }
 }
 
-async function fetchMonthlySummary() {
+function formatSummaryMonth(month) {
+  const date = new Date(`${month}-01T00:00:00`);
+  return date.toLocaleString("en", { month: "short" });
+}
+
+function getSummaryYears(monthlyData) {
+  const years = [...new Set(monthlyData.map(item => String(item.month).slice(0, 4)))];
+  return years.sort((a, b) => b.localeCompare(a));
+}
+
+function getSummaryMonthsForYear(year) {
+  return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`);
+}
+
+function renderSummaryYearMenu(years) {
+  summaryYearMenu.innerHTML = "";
+  summaryYearLabel.textContent = selectedSummaryYear;
+
+  years.forEach(year => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "summary-year-option";
+      button.textContent = year;
+      button.classList.toggle("active", year === selectedSummaryYear);
+      button.addEventListener("click", function () {
+        selectedSummaryYear = year;
+        selectedSummaryMonth = "";
+        selectedSummaryExpenseId = "";
+        summarySelectedMonthExpenses = [];
+        summaryYearMenu.classList.add("hidden");
+        summaryYearBtn.setAttribute("aria-expanded", "false");
+        totalAmount.textContent = getAppState().expenses
+          .reduce((sum, expense) => sum + Number(expense.amount), 0)
+          .toFixed(2);
+        dispatch({ type: "SET_SUMMARY_EXPENSE_FILTER", payload: { month: "", expenseId: "" } });
+        fetchExpenses();
+        renderInteractiveSummary();
+      });
+    summaryYearMenu.appendChild(button);
+  });
+}
+
+function renderMonthlySummaryRows() {
+  monthlySummary.innerHTML = "";
+  const totalsByMonth = new Map(
+    summaryMonthlyData.map(item => [item.month, Number(item.total)])
+  );
+
+  getSummaryMonthsForYear(selectedSummaryYear)
+    .filter(month => totalsByMonth.has(month))
+    .forEach(month => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "summary-month-row";
+      row.classList.toggle("active", month === selectedSummaryMonth);
+      row.addEventListener("click", async function () {
+        await selectSummaryMonth(month);
+      });
+
+      const monthLabel = document.createElement("span");
+      monthLabel.textContent = formatSummaryMonth(month);
+
+      const total = document.createElement("span");
+      total.textContent = `$${(totalsByMonth.get(month) || 0).toFixed(2)}`;
+
+      row.append(monthLabel, total);
+      monthlySummary.appendChild(row);
+    });
+}
+
+function getSummaryMonthlyTotals() {
+  const totalsByMonth = new Map(summaryMonthlyData.map(item => [item.month, Number(item.total)]));
+  return getSummaryMonthsForYear(selectedSummaryYear)
+    .filter(month => totalsByMonth.has(month))
+    .map(month => ({
+    month,
+    total: totalsByMonth.get(month)
+  }));
+}
+
+function getSummaryMonthTotal(month) {
+  const item = summaryMonthlyData.find(entry => entry.month === month);
+  return item ? Number(item.total) : 0;
+}
+
+function resetSummarySelection() {
+  selectedSummaryMonth = "";
+  selectedSummaryExpenseId = "";
+  summarySelectedMonthExpenses = [];
+  renderInteractiveSummary();
+}
+
+async function selectSummaryMonth(month) {
+  selectedSummaryMonth = month;
+  selectedSummaryExpenseId = "";
+  totalAmount.textContent = getSummaryMonthTotal(month).toFixed(2);
+  dispatch({ type: "SET_SUMMARY_EXPENSE_FILTER", payload: { month, expenseId: "" } });
+  fetchExpenses();
+
   try {
-    const data = await requestJson(`${API_BASE}/summary/monthly`, {
+    const data = await requestJson(`${API_BASE}/summary/month-expenses?month=${encodeURIComponent(month)}`, {
       headers: authHeaders()
     });
+    summarySelectedMonthExpenses = Array.isArray(data) ? data : [];
+  } catch (error) {
+    summarySelectedMonthExpenses = [];
+    console.error("Failed to fetch month expenses:", error);
+  }
 
-    const container = document.getElementById("monthly-summary");
-    container.innerHTML = "";
+  renderInteractiveSummary();
+}
 
-    if (!Array.isArray(data)) return;
+function renderSummaryLineChart() {
+  summaryLineChart.innerHTML = "";
+  const points = getSummaryMonthlyTotals();
+  const annualTotal = points.reduce((sum, item) => sum + item.total, 0);
+  const average = points.length ? annualTotal / points.length : 0;
+  const maxTotal = Math.max(average, ...points.map(item => item.total), 1);
+  const width = 260;
+  const height = 150;
+  const left = 24;
+  const right = 12;
+  const top = 18;
+  const bottom = 28;
+  const chartWidth = width - left - right;
+  const chartHeight = height - top - bottom;
+  const toX = index => left + (points.length <= 1 ? chartWidth / 2 : (chartWidth / (points.length - 1)) * index);
+  const toY = value => top + chartHeight - (value / maxTotal) * chartHeight;
+  const linePoints = points.map((item, index) => `${toX(index)},${toY(item.total)}`).join(" ");
+  const averageY = toY(average);
 
-    data.forEach(item => {
-      const p = document.createElement("p");
-      const month = document.createElement("span");
-      const total = document.createElement("span");
-      month.textContent = item.month;
-      total.textContent = `$${Number(item.total).toFixed(2)}`;
-      p.append(month, total);
-      container.appendChild(p);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "summary-line-svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${selectedSummaryYear} monthly spending line chart`);
+
+  const averageLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  averageLine.setAttribute("class", "summary-average-line");
+  averageLine.setAttribute("x1", String(left));
+  averageLine.setAttribute("x2", String(width - right));
+  averageLine.setAttribute("y1", String(averageY));
+  averageLine.setAttribute("y2", String(averageY));
+  svg.appendChild(averageLine);
+
+  const averageLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  averageLabel.setAttribute("class", "summary-average-label");
+  averageLabel.setAttribute("x", String(left));
+  averageLabel.setAttribute("y", String(Math.max(10, averageY - 5)));
+  averageLabel.textContent = `$${average.toFixed(2)}`;
+  svg.appendChild(averageLabel);
+
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  line.setAttribute("class", "summary-spend-line");
+  line.setAttribute("points", linePoints);
+  svg.appendChild(line);
+
+  points.forEach((item, index) => {
+    const isActive = item.month === selectedSummaryMonth;
+    const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    point.setAttribute("class", `summary-line-point${isActive ? " active" : ""}`);
+    point.setAttribute("cx", String(toX(index)));
+    point.setAttribute("cy", String(toY(item.total)));
+    point.setAttribute("r", isActive ? "6" : "4");
+    point.setAttribute("tabindex", "0");
+    point.setAttribute("aria-label", `${formatSummaryMonth(item.month)} $${item.total.toFixed(2)}`);
+    point.addEventListener("click", function () {
+      selectSummaryMonth(item.month);
     });
+    point.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectSummaryMonth(item.month);
+      }
+    });
+    svg.appendChild(point);
+
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("class", "summary-line-month");
+    label.setAttribute("x", String(toX(index)));
+    label.setAttribute("y", String(height - 8));
+    label.textContent = String(Number(item.month.slice(5, 7)));
+    svg.appendChild(label);
+
+    if (isActive) {
+      const amount = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      amount.setAttribute("class", "summary-point-amount");
+      amount.setAttribute("x", String(toX(index)));
+      amount.setAttribute("y", String(Math.max(12, toY(item.total) - 12)));
+      amount.textContent = `$${item.total.toFixed(2)}`;
+      svg.appendChild(amount);
+    }
+  });
+
+  summaryLineChart.appendChild(svg);
+}
+
+function renderSummaryMonthExpenses() {
+  summaryMonthExpenses.innerHTML = "";
+
+  if (!selectedSummaryMonth) {
+    summaryMonthExpenses.classList.add("hidden");
+    return;
+  }
+
+  summaryMonthExpenses.classList.remove("hidden");
+
+  const heading = document.createElement("div");
+  heading.className = "summary-expense-heading";
+  heading.textContent = `${formatSummaryMonth(selectedSummaryMonth)} bills`;
+  summaryMonthExpenses.appendChild(heading);
+
+  if (!summarySelectedMonthExpenses.length) {
+    const empty = document.createElement("p");
+    empty.className = "summary-empty";
+    empty.textContent = "No bills this month";
+    summaryMonthExpenses.appendChild(empty);
+    return;
+  }
+
+  summarySelectedMonthExpenses.forEach(expense => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "summary-expense-item";
+    item.classList.toggle("active", String(expense.id) === String(selectedSummaryExpenseId));
+    item.addEventListener("click", function () {
+      selectedSummaryExpenseId = String(expense.id);
+      totalAmount.textContent = Number(expense.amount).toFixed(2);
+      dispatch({
+        type: "SET_SUMMARY_EXPENSE_FILTER",
+        payload: { month: selectedSummaryMonth, expenseId: selectedSummaryExpenseId }
+      });
+      fetchExpenses();
+      renderSummaryMonthExpenses();
+    });
+
+    const title = document.createElement("span");
+    title.textContent = expense.title;
+
+    const amount = document.createElement("strong");
+    amount.textContent = `$${Number(expense.amount).toFixed(2)}`;
+
+    item.append(title, amount);
+    summaryMonthExpenses.appendChild(item);
+  });
+}
+
+function renderInteractiveSummary() {
+  if (!monthlySummary || !summaryYearBtn || !summaryYearMenu || !summaryLineChart || !summaryMonthExpenses) return;
+
+  const years = getSummaryYears(summaryMonthlyData);
+  if (!years.includes(selectedSummaryYear)) {
+    selectedSummaryYear = years.includes(String(new Date().getFullYear()))
+      ? String(new Date().getFullYear())
+      : (years[0] || String(new Date().getFullYear()));
+  }
+
+  renderSummaryYearMenu(years);
+  renderMonthlySummaryRows();
+  renderSummaryLineChart();
+  renderSummaryMonthExpenses();
+}
+
+async function fetchMonthlySummary() {
+  try {
+    const monthlyData = await requestJson(`${API_BASE}/summary/monthly`, { headers: authHeaders() });
+    summaryMonthlyData = Array.isArray(monthlyData) ? monthlyData : [];
+    renderInteractiveSummary();
   } catch (error) {
     console.error("Failed to fetch monthly summary:", error);
   }
@@ -988,7 +1288,6 @@ function refreshAll() {
   }
 
   fetchExpenses();
-  fetchCategorySummary();
   fetchMonthlySummary();
 }
 
@@ -1146,12 +1445,15 @@ function createExpenseCard(expense, options = {}) {
   expenseItem.append(title, category, amount, date, description);
 
   if (showActions) {
+    const actions = document.createElement("div");
+    actions.className = "expense-card-actions";
+
     const editBtn = document.createElement("button");
-    editBtn.className = "edit-btn";
+    editBtn.className = "edit-btn expense-action-btn";
     editBtn.textContent = "Edit";
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.className = "delete-btn";
+    deleteBtn.className = "delete-btn expense-action-btn danger-action";
     deleteBtn.textContent = "Delete";
 
     editBtn.addEventListener("click", function () {
@@ -1162,7 +1464,8 @@ function createExpenseCard(expense, options = {}) {
       dispatch({ type: "START_DELETE", payload: { id: expense.id } });
     });
 
-    expenseItem.append(editBtn, deleteBtn);
+    actions.append(editBtn, deleteBtn);
+    expenseItem.appendChild(actions);
   }
 
   expenseItem.classList.add("added");
@@ -1384,6 +1687,7 @@ configureDateInputs();
 if (expenseSearch) {
   expenseSearch.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "search", value: this.value } });
+    resetSummarySelection();
     fetchExpenses();
   });
 }
@@ -1391,6 +1695,7 @@ if (expenseSearch) {
 if (filterCategory) {
   filterCategory.addEventListener("change", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "category", value: this.value } });
+    resetSummarySelection();
     fetchExpenses();
   });
 }
@@ -1398,6 +1703,7 @@ if (filterCategory) {
 if (filterMinAmount) {
   filterMinAmount.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "minAmount", value: this.value } });
+    resetSummarySelection();
     fetchExpenses();
   });
 }
@@ -1405,6 +1711,7 @@ if (filterMinAmount) {
 if (filterMaxAmount) {
   filterMaxAmount.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "maxAmount", value: this.value } });
+    resetSummarySelection();
     fetchExpenses();
   });
 }
@@ -1412,6 +1719,7 @@ if (filterMaxAmount) {
 if (sortExpenses) {
   sortExpenses.addEventListener("change", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "sort", value: this.value } });
+    resetSummarySelection();
     fetchExpenses();
   });
 }
@@ -1419,6 +1727,7 @@ if (sortExpenses) {
 if (clearFiltersBtn) {
   clearFiltersBtn.addEventListener("click", function () {
     dispatch({ type: "CLEAR_FILTERS" });
+    resetSummarySelection();
     fetchExpenses();
   });
 }

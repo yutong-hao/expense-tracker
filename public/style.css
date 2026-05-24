@@ -98,8 +98,7 @@ body {
   flex-wrap: wrap;
 }
 
-.user-menu-button,
-.status-menu-button {
+.user-menu-button {
   width: auto;
   margin-top: 0;
   border-radius: 12px;
@@ -108,9 +107,9 @@ body {
 .user-menu-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 9px 11px 9px 13px;
   background: rgba(255, 255, 255, 0.86) !important;
   color: #111827;
   border: 1px solid rgba(99, 102, 241, 0.18);
@@ -122,51 +121,39 @@ body {
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 
-.status-menu {
-  position: relative;
-}
-
-.status-menu-button {
-  width: 92px;
-  padding: 10px 14px;
-  background: #111827;
-}
-
-.status-menu-button.online {
-  background: #15803d !important;
-}
-
-.status-menu-button.offline {
-  background: #b91c1c !important;
-}
-
-.status-menu-options {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 20;
-  width: 92px;
-  padding: 6px;
-  border-radius: 12px;
-  background: white;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
-}
-
-.status-option {
-  width: 100%;
+.user-card-main {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
-  margin-top: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 15px;
 }
 
-.status-option.online {
-  background: #15803d !important;
+.user-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
 }
 
-.status-option.offline {
-  background: #b91c1c !important;
+.user-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.user-status.online {
+  background: rgba(21, 128, 61, 0.12);
+  color: #15803d;
+}
+
+.user-status.offline {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
 }
 
 .modal-content label {
@@ -185,7 +172,7 @@ body {
 
 .role-pill {
   display: inline-block;
-  margin-left: 8px;
+  margin-left: 7px;
   padding: 4px 9px;
   border-radius: 999px;
   background: rgba(37, 99, 235, 0.12);
@@ -627,20 +614,31 @@ button:active {
   color: rgb(255, 255, 255);
 }
 
-.edit-btn {
-  background: #2563eb !important;
+.expense-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
 }
 
-.edit-btn:hover {
-  background: #1d4ed8 !important;
+.expense-card-actions button {
+  margin: 0;
 }
 
-.delete-btn {
-  background: #dc2626 !important;
+.expense-action-btn {
+  width: 100%;
+  margin: 0;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  font-size: 15px;
+  box-shadow: none !important;
 }
 
-.delete-btn:hover {
-  background: #b91c1c !important;
+.expense-action-btn:hover {
+  background: #e2e8f0 !important;
+  transform: translateY(-1px);
 }
 
 
@@ -679,6 +677,41 @@ button:active {
   color: #111827;
 }
 
+.account-modal-content h3 {
+  margin: 0 42px 14px 0;
+}
+
+.modal-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.modal-close-btn {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  margin: -6px -6px 0 0;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent !important;
+  color: #64748b;
+  font-size: 27px;
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: none !important;
+}
+
+.modal-close-btn:hover {
+  background: rgba(100, 116, 139, 0.12) !important;
+  color: #0f172a;
+  transform: none;
+}
+
 .modal-content form {
   display: flex;
   flex-direction: column;
@@ -702,6 +735,40 @@ button:active {
 .modal-actions button {
   flex: 1;
   margin-top: 0;
+}
+
+.account-session-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.26);
+}
+
+.account-action-btn {
+  width: 100%;
+  margin: 0;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  font-size: 15px;
+  box-shadow: none !important;
+}
+
+.account-action-btn:hover {
+  background: #e2e8f0 !important;
+  transform: translateY(-1px);
+}
+
+.danger-action {
+  background: rgba(220, 38, 38, 0.1) !important;
+  color: #b91c1c !important;
+}
+
+.danger-action:hover {
+  background: rgba(220, 38, 38, 0.17) !important;
 }
 
 .delete-modal-box {
@@ -762,12 +829,6 @@ button:active {
   color: #374151 !important;
 }
 
-#cancel-account {
-  background: #e5e7eb !important;
-  color: #374151 !important;
-}
-
-#cancel-account:hover,
 #cancel-delete:hover {
   background: #d1d5db !important;
 }
@@ -862,15 +923,6 @@ button:active {
   .session-actions,
   .session-bar button {
     width: 100%;
-  }
-
-  .status-menu {
-    width: 100%;
-  }
-
-  .status-menu-options {
-    left: 0;
-    right: 0;
   }
 
   .two-col-row {
@@ -1180,6 +1232,237 @@ h2::after {
   background: rgba(99, 102, 241, 0.08);
   border-left: 3px solid #6366f1;
   padding-left: 8px;
+}
+
+.receipt-title-row {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-year-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.summary-year-btn {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  color: #4f46e5;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  box-shadow: none !important;
+}
+
+.summary-year-btn:hover {
+  transform: none;
+  color: #3730a3;
+}
+
+.summary-year-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 6px;
+  min-width: 92px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(71, 85, 105, 0.18);
+}
+
+.summary-year-option {
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: transparent !important;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: none;
+  box-shadow: none !important;
+}
+
+.summary-year-option:hover,
+.summary-year-option.active {
+  background: rgba(99, 102, 241, 0.1) !important;
+  color: #4f46e5;
+  transform: none;
+}
+
+#monthly-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.summary-month-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: transparent !important;
+  color: #374151;
+  font-size: 14px;
+  box-shadow: none !important;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.summary-month-row:hover {
+  background: rgba(99, 102, 241, 0.08) !important;
+  transform: translateX(4px);
+}
+
+.summary-month-row.active {
+  background: rgba(99, 102, 241, 0.13) !important;
+  border-left: 3px solid #6366f1;
+  color: #4f46e5;
+  padding-left: 8px;
+}
+
+.summary-month-row span:first-child {
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.summary-month-row.active span:first-child {
+  color: #4f46e5;
+}
+
+.summary-month-row span:last-child {
+  font-weight: 700;
+  color: #111827;
+}
+
+.summary-empty {
+  margin: 4px 0 0 !important;
+  padding: 8px 4px !important;
+  color: #6b7280 !important;
+  font-size: 14px !important;
+}
+
+.summary-line-chart {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #d7cbbb;
+}
+
+.summary-line-svg {
+  width: 100%;
+  overflow: visible;
+}
+
+.summary-average-line {
+  stroke: rgba(99, 102, 241, 0.38);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.summary-average-label {
+  fill: #6b7280;
+  font-size: 11px;
+  font-weight: 800;
+  text-anchor: start;
+}
+
+.summary-spend-line {
+  fill: none;
+  stroke: #4f46e5;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.summary-line-point {
+  fill: #ffffff;
+  stroke: #4f46e5;
+  stroke-width: 3;
+  cursor: pointer;
+  transition: r 0.2s ease, filter 0.2s ease;
+}
+
+.summary-line-point:hover,
+.summary-line-point.active {
+  filter: drop-shadow(0 6px 8px rgba(79, 70, 229, 0.32));
+}
+
+.summary-line-month {
+  fill: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+
+.summary-point-amount {
+  fill: #4f46e5;
+  font-size: 12px;
+  font-weight: 900;
+  text-anchor: middle;
+}
+
+.summary-month-expenses {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #d7cbbb;
+}
+
+.summary-expense-heading {
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.summary-expense-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #374151;
+  font-size: 13px;
+  text-align: left;
+  box-shadow: none !important;
+}
+
+.summary-expense-item:hover,
+.summary-expense-item.active {
+  background: rgba(99, 102, 241, 0.11) !important;
+  transform: none;
+}
+
+.summary-expense-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-expense-item strong {
+  color: #111827;
+  font-size: 13px;
 }
 
 /* Category ledgers */
@@ -1567,36 +1850,24 @@ h2::after {
   box-shadow: 0 14px 26px rgba(76, 91, 128, 0.22);
 }
 
-.edit-btn {
-  background: #2563eb !important;
-}
-
-.edit-btn:hover {
-  background: #1d4ed8 !important;
-}
-
-.delete-btn,
 .small-danger-btn,
 #confirm-delete {
   background: #dc2626 !important;
   color: #ffffff !important;
 }
 
-.delete-btn:hover,
 .small-danger-btn:hover,
 #confirm-delete:hover {
   background: #b91c1c !important;
 }
 
 #cancel-edit,
-#cancel-account,
 #cancel-delete {
   background: var(--ui-soft-neutral) !important;
   color: var(--ui-neutral-text) !important;
 }
 
 #cancel-edit:hover,
-#cancel-account:hover,
 #cancel-delete:hover {
   background: var(--ui-soft-neutral-hover) !important;
 }
@@ -1676,9 +1947,9 @@ h2::after {
 }
 
 .secondary-tool-btn {
-  background: #ec4899 !important;
+  background: #4f46e5 !important;
 }
 
 .secondary-tool-btn:hover {
-  background: #db2777 !important;
+  background: #3730a3 !important;
 }

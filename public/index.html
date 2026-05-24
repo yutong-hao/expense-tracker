@@ -51,7 +51,6 @@
         <h2>Change Password</h2>
         <form id="change-password-form">
           <input type="text" id="change-password-username" placeholder="Username" required />
-          <input type="password" id="change-password-current" placeholder="Current password" required />
           <input type="password" id="change-password-new" placeholder="New password" required minlength="6" />
           <button type="submit">Update Password</button>
         </form>
@@ -65,16 +64,13 @@
     <div id="app-view" class="hidden">
       <div class="session-bar">
         <div class="session-actions">
-          <button type="button" id="account-menu-btn" class="user-menu-button">
-            <span id="current-username"></span>
-            <span id="current-role" class="role-pill"></span>
+          <button type="button" id="account-menu-btn" class="user-menu-button" aria-haspopup="dialog" aria-expanded="false" aria-label="Open account settings">
+            <span class="user-card-main">
+              <span id="current-username"></span>
+              <span id="current-role" class="role-pill"></span>
+            </span>
+            <span id="current-status" class="user-status online">Online</span>
           </button>
-          <div class="status-menu">
-            <button type="button" id="status-menu-btn" class="status-menu-button online" aria-expanded="false">Online</button>
-            <div id="status-menu-options" class="status-menu-options hidden">
-              <button type="button" id="status-toggle-option" class="status-option offline">Offline</button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -158,6 +154,7 @@
               <option value="Food">Food</option>
               <option value="Shopping">Shopping</option>
               <option value="Transport">Transport</option>
+              <option value="Utilities">Utilities</option>
             </select>
 
             <div class="two-col-row">
@@ -180,6 +177,7 @@
               <option value="Food">Food</option>
               <option value="Shopping">Shopping</option>
               <option value="Transport">Transport</option>
+              <option value="Utilities">Utilities</option>
             </select>
             <input type="number" id="filter-min-amount" placeholder="Min" min="0" step="0.01" />
             <input type="number" id="filter-max-amount" placeholder="Max" min="0" step="0.01" />
@@ -197,15 +195,24 @@
       </div>
 
       <aside class="summary-receipt">
-        <div class="receipt-title">SUMMARY</div>
+        <div class="receipt-title-row">
+          <div class="receipt-title">SUMMARY</div>
+          <div class="summary-year-control">
+            <button type="button" id="summary-year-btn" class="summary-year-btn" aria-expanded="false">
+              <span id="summary-year-label"></span>
+            </button>
+            <div id="summary-year-menu" class="summary-year-menu hidden"></div>
+          </div>
+        </div>
         <div class="receipt-divider"></div>
 
         <div class="receipt-label">Total</div>
         <div class="receipt-total">$<span id="total-amount">0.00</span></div>
 
         <div class="receipt-divider"></div>
-        <div id="category-summary"></div>
         <div id="monthly-summary"></div>
+        <div id="summary-line-chart" class="summary-line-chart"></div>
+        <div id="summary-month-expenses" class="summary-month-expenses hidden"></div>
       </aside>
       </div>
     </div>
@@ -225,6 +232,7 @@
           <option value="Food">Food</option>
           <option value="Shopping">Shopping</option>
           <option value="Transport">Transport</option>
+          <option value="Utilities">Utilities</option>
         </select>
 
         <input type="text" id="edit-amount" placeholder="Amount" inputmode="decimal" required />
@@ -240,8 +248,11 @@
   </div>
 
   <div id="account-modal" class="modal hidden">
-    <div class="modal-content">
-      <h3>Account Settings</h3>
+    <div class="modal-content account-modal-content">
+      <div class="modal-title-row">
+        <h3>Account Settings</h3>
+        <button type="button" id="close-account" class="modal-close-btn" aria-label="Close account settings">&times;</button>
+      </div>
 
       <form id="account-form">
         <label for="account-username">Username</label>
@@ -256,10 +267,14 @@
         <p class="form-hint">Enter your current password only when changing your password.</p>
 
         <div class="modal-actions">
-          <button type="button" id="cancel-account">Cancel</button>
           <button type="submit" id="save-account">Save</button>
         </div>
       </form>
+
+      <div class="account-session-actions">
+        <button type="button" id="switch-account" class="account-action-btn">Switch account</button>
+        <button type="button" id="logout-account" class="account-action-btn danger-action">Log out</button>
+      </div>
     </div>
   </div>
   <div id="delete-modal" class="modal hidden">
