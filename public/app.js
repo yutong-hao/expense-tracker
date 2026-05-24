@@ -162,16 +162,14 @@ function AppReducer(state, action) {
       {
         const nextFilters = {
           ...state.filters,
-          [action.payload.name]: action.payload.value,
-          month: "",
-          expenseId: ""
+          [action.payload.name]: action.payload.value
         };
 
         return {
           ...state,
           filters: nextFilters,
-          expandedCategories: action.payload.name === "category" && action.payload.value
-            ? { [action.payload.value]: true }
+          expandedCategories: nextFilters.category
+            ? { [nextFilters.category]: true }
             : {},
           ledgerPage: 1
         };
@@ -190,7 +188,11 @@ function AppReducer(state, action) {
     case "CLEAR_FILTERS":
       return {
         ...state,
-        filters: initialState.filters,
+        filters: {
+          ...initialState.filters,
+          month: state.filters.month,
+          expenseId: state.filters.expenseId
+        },
         expandedCategories: {},
         ledgerPage: 1
       };
@@ -875,6 +877,20 @@ function createExpenseQueryString(filters) {
   return params.toString();
 }
 
+function createSummaryMonthExpenseQueryString(month) {
+  const { filters } = getAppState();
+  const params = new URLSearchParams();
+
+  params.set("month", month);
+  if (filters.search.trim()) params.set("search", filters.search.trim());
+  if (filters.category) params.set("category", filters.category);
+  if (filters.minAmount !== "") params.set("minAmount", filters.minAmount);
+  if (filters.maxAmount !== "") params.set("maxAmount", filters.maxAmount);
+  if (filters.sort) params.set("sort", filters.sort);
+
+  return params.toString();
+}
+
 async function fetchExpenses() {
   const requestId = ++expenseRequestId;
   const { filters } = getAppState();
@@ -891,6 +907,28 @@ async function fetchExpenses() {
   } catch (error) {
     console.error("Failed to fetch expenses:", error);
   }
+}
+
+async function refreshSelectedSummaryMonthExpenses() {
+  if (!selectedSummaryMonth) return;
+
+  try {
+    const queryString = createSummaryMonthExpenseQueryString(selectedSummaryMonth);
+    const data = await requestJson(`${API_BASE}/summary/month-expenses?${queryString}`, {
+      headers: authHeaders()
+    });
+    summarySelectedMonthExpenses = Array.isArray(data) ? data : [];
+  } catch (error) {
+    summarySelectedMonthExpenses = [];
+    console.error("Failed to fetch month expenses:", error);
+  }
+
+  renderSummaryMonthExpenses();
+}
+
+async function refreshExpenseFilters() {
+  fetchExpenses();
+  refreshSelectedSummaryMonthExpenses();
 }
 
 async function fetchCategorySummary() {
@@ -944,9 +982,6 @@ function renderSummaryYearMenu(years) {
         summarySelectedMonthExpenses = [];
         summaryYearMenu.classList.add("hidden");
         summaryYearBtn.setAttribute("aria-expanded", "false");
-        totalAmount.textContent = getAppState().expenses
-          .reduce((sum, expense) => sum + Number(expense.amount), 0)
-          .toFixed(2);
         dispatch({ type: "SET_SUMMARY_EXPENSE_FILTER", payload: { month: "", expenseId: "" } });
         fetchExpenses();
         renderInteractiveSummary();
@@ -1006,14 +1041,24 @@ function resetSummarySelection() {
 }
 
 async function selectSummaryMonth(month) {
+  if (selectedSummaryMonth === month) {
+    selectedSummaryMonth = "";
+    selectedSummaryExpenseId = "";
+    summarySelectedMonthExpenses = [];
+    dispatch({ type: "SET_SUMMARY_EXPENSE_FILTER", payload: { month: "", expenseId: "" } });
+    fetchExpenses();
+    renderInteractiveSummary();
+    return;
+  }
+
   selectedSummaryMonth = month;
   selectedSummaryExpenseId = "";
-  totalAmount.textContent = getSummaryMonthTotal(month).toFixed(2);
   dispatch({ type: "SET_SUMMARY_EXPENSE_FILTER", payload: { month, expenseId: "" } });
   fetchExpenses();
 
   try {
-    const data = await requestJson(`${API_BASE}/summary/month-expenses?month=${encodeURIComponent(month)}`, {
+    const queryString = createSummaryMonthExpenseQueryString(month);
+    const data = await requestJson(`${API_BASE}/summary/month-expenses?${queryString}`, {
       headers: authHeaders()
     });
     summarySelectedMonthExpenses = Array.isArray(data) ? data : [];
@@ -1139,8 +1184,9 @@ function renderSummaryMonthExpenses() {
     item.className = "summary-expense-item";
     item.classList.toggle("active", String(expense.id) === String(selectedSummaryExpenseId));
     item.addEventListener("click", function () {
-      selectedSummaryExpenseId = String(expense.id);
-      totalAmount.textContent = Number(expense.amount).toFixed(2);
+      selectedSummaryExpenseId = String(expense.id) === String(selectedSummaryExpenseId)
+        ? ""
+        : String(expense.id);
       dispatch({
         type: "SET_SUMMARY_EXPENSE_FILTER",
         payload: { month: selectedSummaryMonth, expenseId: selectedSummaryExpenseId }
@@ -1687,48 +1733,42 @@ configureDateInputs();
 if (expenseSearch) {
   expenseSearch.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "search", value: this.value } });
-    resetSummarySelection();
-    fetchExpenses();
+    refreshExpenseFilters();
   });
 }
 
 if (filterCategory) {
   filterCategory.addEventListener("change", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "category", value: this.value } });
-    resetSummarySelection();
-    fetchExpenses();
+    refreshExpenseFilters();
   });
 }
 
 if (filterMinAmount) {
   filterMinAmount.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "minAmount", value: this.value } });
-    resetSummarySelection();
-    fetchExpenses();
+    refreshExpenseFilters();
   });
 }
 
 if (filterMaxAmount) {
   filterMaxAmount.addEventListener("input", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "maxAmount", value: this.value } });
-    resetSummarySelection();
-    fetchExpenses();
+    refreshExpenseFilters();
   });
 }
 
 if (sortExpenses) {
   sortExpenses.addEventListener("change", function () {
     dispatch({ type: "SET_FILTER", payload: { name: "sort", value: this.value } });
-    resetSummarySelection();
-    fetchExpenses();
+    refreshExpenseFilters();
   });
 }
 
 if (clearFiltersBtn) {
   clearFiltersBtn.addEventListener("click", function () {
     dispatch({ type: "CLEAR_FILTERS" });
-    resetSummarySelection();
-    fetchExpenses();
+    refreshExpenseFilters();
   });
 }
 

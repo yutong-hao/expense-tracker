@@ -613,19 +613,51 @@ app.get("/api/summary/monthly", authenticate, async (req, res) => {
 
 app.get("/api/summary/month-expenses", authenticate, async (req, res) => {
   const month = String(req.query.month || "");
+  const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc" } = req.query;
+  const where = ["user_id = ?", "SUBSTRING(expense_date, 1, 7) = ?"];
+  const params = [req.user.id, month];
+  const searchText = String(search).trim();
+  const minValue = Number.parseFloat(minAmount);
+  const maxValue = Number.parseFloat(maxAmount);
+  const sortMap = {
+    "date-desc": "expense_date DESC, id DESC",
+    "date-asc": "expense_date ASC, id ASC",
+    "amount-desc": "CAST(amount AS DECIMAL(10,2)) DESC, id DESC",
+    "amount-asc": "CAST(amount AS DECIMAL(10,2)) ASC, id ASC",
+    "title-asc": "title ASC, id ASC"
+  };
 
   if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month)) {
     return res.status(400).json({ error: "Month must be in YYYY-MM format" });
+  }
+
+  if (searchText) {
+    where.push("(title LIKE ? OR category LIKE ? OR description LIKE ?)");
+    params.push(`%${searchText}%`, `%${searchText}%`, `%${searchText}%`);
+  }
+
+  if (category) {
+    where.push("category = ?");
+    params.push(category);
+  }
+
+  if (Number.isFinite(minValue)) {
+    where.push("CAST(amount AS DECIMAL(10,2)) >= ?");
+    params.push(minValue);
+  }
+
+  if (Number.isFinite(maxValue)) {
+    where.push("CAST(amount AS DECIMAL(10,2)) <= ?");
+    params.push(maxValue);
   }
 
   try {
     const [rows] = await query(`
       SELECT id, title, category, amount, expense_date, description, created_at
       FROM expenses
-      WHERE user_id = ?
-        AND SUBSTRING(expense_date, 1, 7) = ?
-      ORDER BY expense_date DESC, id DESC
-    `, [req.user.id, month]);
+      WHERE ${where.join(" AND ")}
+      ORDER BY ${sortMap[sort] || sortMap["date-desc"]}
+    `, params);
 
     res.json(rows);
   } catch (err) {
