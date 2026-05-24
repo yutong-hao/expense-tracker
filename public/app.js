@@ -17,6 +17,7 @@ let summarySelectedMonthExpenses = [];
 let selectedSummaryYear = String(new Date().getFullYear());
 let selectedSummaryMonth = "";
 let selectedSummaryExpenseId = "";
+let adminActivityDates = [];
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -56,7 +57,9 @@ const cancelCategoryEditBtn = document.getElementById("cancel-category-edit");
 const closeCategoryModalBtn = document.getElementById("close-category-modal");
 const adminUserSearch = document.getElementById("admin-user-search");
 const adminRoleFilter = document.getElementById("admin-role-filter");
-const adminActivityDateFilter = document.getElementById("admin-activity-date-filter");
+const adminActivityYearFilter = document.getElementById("admin-activity-year-filter");
+const adminActivityMonthFilter = document.getElementById("admin-activity-month-filter");
+const adminActivityDayFilter = document.getElementById("admin-activity-day-filter");
 const activityActionFilter = document.getElementById("activity-action-filter");
 const adminClearFiltersBtn = document.getElementById("admin-clear-filters");
 const userPrevPage = document.getElementById("user-prev-page");
@@ -100,6 +103,8 @@ const editDescription = document.getElementById("edit-description");
 const editCancelBtn = document.getElementById("cancel-edit");
 
 const deleteModal = document.getElementById("delete-modal");
+const deleteModalTitle = document.getElementById("delete-modal-title");
+const deleteModalMessage = document.getElementById("delete-modal-message");
 const cancelDeleteBtn = document.getElementById("cancel-delete");
 const confirmDeleteBtn = document.getElementById("confirm-delete");
 
@@ -120,7 +125,9 @@ const initialState = {
   adminUserFilters: {
     search: "",
     role: "",
-    date: "",
+    dateYear: "",
+    dateMonth: "",
+    dateDay: "",
     action: ""
   },
   adminUserPagination: {
@@ -146,7 +153,7 @@ const initialState = {
     expenseId: ""
   },
   editingExpense: null,
-  deleteTargetId: null
+  deleteTarget: null
 };
 
 function AppReducer(state, action) {
@@ -173,7 +180,7 @@ function AppReducer(state, action) {
         adminActivities: [],
         activityFilters: initialState.activityFilters,
         editingExpense: null,
-        deleteTargetId: null
+        deleteTarget: null
       };
     case "SET_CATEGORIES":
       return {
@@ -279,21 +286,43 @@ function AppReducer(state, action) {
         adminUserPagination: action.payload.pagination
       };
     case "SET_ADMIN_USER_FILTER":
-      return {
-        ...state,
-        adminUserFilters: {
+      {
+        const nextAdminUserFilters = {
           ...state.adminUserFilters,
           [action.payload.name]: action.payload.value
-        },
-        activityFilters: {
-          ...state.activityFilters,
-          page: 1
-        },
-        adminUserPagination: {
-          ...state.adminUserPagination,
-          page: 1
+        };
+
+        if (action.payload.name === "dateYear") {
+          nextAdminUserFilters.dateMonth = "";
+          nextAdminUserFilters.dateDay = "";
         }
-      };
+
+        if (action.payload.name === "dateMonth") {
+          nextAdminUserFilters.dateDay = "";
+        }
+
+        if (!nextAdminUserFilters.dateYear) {
+          nextAdminUserFilters.dateMonth = "";
+          nextAdminUserFilters.dateDay = "";
+        }
+
+        if (!nextAdminUserFilters.dateMonth) {
+          nextAdminUserFilters.dateDay = "";
+        }
+
+        return {
+          ...state,
+          adminUserFilters: nextAdminUserFilters,
+          activityFilters: {
+            ...state.activityFilters,
+            page: 1
+          },
+          adminUserPagination: {
+            ...state.adminUserPagination,
+            page: 1
+          }
+        };
+      }
     case "CLEAR_ADMIN_USER_FILTERS":
       return {
         ...state,
@@ -338,12 +367,12 @@ function AppReducer(state, action) {
     case "START_DELETE":
       return {
         ...state,
-        deleteTargetId: action.payload.id
+        deleteTarget: action.payload
       };
     case "CANCEL_DELETE":
       return {
         ...state,
-        deleteTargetId: null
+        deleteTarget: null
       };
     default:
       return state;
@@ -435,10 +464,20 @@ function renderAppState(state, previousState, action) {
     }
   }
 
-  if (state.deleteTargetId !== previousState.deleteTargetId) {
-    if (state.deleteTargetId === null) {
+  if (state.deleteTarget !== previousState.deleteTarget) {
+    if (state.deleteTarget === null) {
       hideModal(deleteModal);
     } else {
+      if (deleteModalTitle) {
+        deleteModalTitle.textContent = state.deleteTarget.type === "user" ? "Delete User?" : "Delete Expense?";
+      }
+
+      if (deleteModalMessage) {
+        deleteModalMessage.textContent = state.deleteTarget.type === "user"
+          ? `Are you sure you want to delete ${state.deleteTarget.label || "this user account"}?`
+          : "Are you sure you want to delete this expense?";
+      }
+
       showModal(deleteModal);
     }
   }
@@ -713,15 +752,81 @@ function renderExpensePagination(pagination) {
   expenseNextPage.disabled = pagination.page >= pagination.pageCount;
 }
 
+function getActivityDateParts(date) {
+  const [year = "", month = "", day = ""] = String(date || "").split("-");
+  return { year, month, day };
+}
+
+function getAvailableActivityYears() {
+  return [...new Set(adminActivityDates.map(date => getActivityDateParts(date).year).filter(Boolean))];
+}
+
+function getAvailableActivityMonths(year) {
+  return [...new Set(adminActivityDates
+    .map(date => getActivityDateParts(date))
+    .filter(parts => parts.year === year)
+    .map(parts => parts.month)
+    .filter(Boolean))];
+}
+
+function getAvailableActivityDays(year, month) {
+  return [...new Set(adminActivityDates
+    .map(date => getActivityDateParts(date))
+    .filter(parts => parts.year === year && parts.month === month)
+    .map(parts => parts.day)
+    .filter(Boolean))];
+}
+
+function setAdminDateSelectOptions(select, placeholder, values, formatter) {
+  if (!select) return;
+
+  select.innerHTML = "";
+
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = placeholder;
+  select.appendChild(defaultOption);
+
+  values.forEach(value => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = formatter ? formatter(value) : value;
+    select.appendChild(option);
+  });
+}
+
+function renderAdminDateFilterOptions(filters) {
+  const years = getAvailableActivityYears();
+  const months = filters.dateYear ? getAvailableActivityMonths(filters.dateYear) : [];
+  const days = filters.dateYear && filters.dateMonth
+    ? getAvailableActivityDays(filters.dateYear, filters.dateMonth)
+    : [];
+
+  setAdminDateSelectOptions(adminActivityYearFilter, "Year", years);
+  if (adminActivityYearFilter) adminActivityYearFilter.value = filters.dateYear;
+
+  setAdminDateSelectOptions(adminActivityMonthFilter, "Month", months, value => Number(value));
+  if (adminActivityMonthFilter) {
+    adminActivityMonthFilter.value = filters.dateMonth;
+    adminActivityMonthFilter.disabled = !filters.dateYear || !months.length;
+  }
+
+  setAdminDateSelectOptions(adminActivityDayFilter, "Day", days, value => Number(value));
+  if (adminActivityDayFilter) {
+    adminActivityDayFilter.value = filters.dateDay;
+    adminActivityDayFilter.disabled = !filters.dateYear || !filters.dateMonth || !days.length;
+  }
+}
+
 function syncAdminUserFilterControls(filters) {
   if (adminUserSearch) adminUserSearch.value = filters.search;
   if (adminRoleFilter) adminRoleFilter.value = filters.role;
-  if (adminActivityDateFilter) adminActivityDateFilter.value = filters.date;
+  renderAdminDateFilterOptions(filters);
   if (activityActionFilter) activityActionFilter.value = filters.action;
 }
 
 function hasAdminUserFilter(filters) {
-  return Boolean(filters.search.trim() || filters.role || filters.date || filters.action);
+  return Boolean(filters.search.trim() || filters.role || filters.dateYear || filters.dateMonth || filters.dateDay || filters.action);
 }
 
 function renderAdminUsers(users, filters, pagination) {
@@ -777,7 +882,7 @@ function renderAdminUsers(users, filters, pagination) {
     });
 
     deleteBtn.addEventListener("click", function () {
-      deleteUser(user.id);
+      deleteUser(user.id, user.username);
     });
 
     adminUsers.appendChild(row);
@@ -974,6 +1079,11 @@ accountForm.addEventListener("submit", async function (event) {
 
   if (newPassword && !currentPassword) {
     showToast("Current password is required to change password");
+    return;
+  }
+
+  if (newPassword && newPassword === currentPassword) {
+    showToast("New password must be different from current password");
     return;
   }
 
@@ -1417,7 +1527,9 @@ function createAdminQueryString(filters, pagination) {
 
   if (filters.search.trim()) params.set("search", filters.search.trim());
   if (filters.role) params.set("role", filters.role);
-  if (filters.date) params.set("date", filters.date);
+  if (filters.dateYear) params.set("dateYear", filters.dateYear);
+  if (filters.dateMonth) params.set("dateMonth", filters.dateMonth);
+  if (filters.dateDay) params.set("dateDay", filters.dateDay);
   if (filters.action) params.set("action", filters.action);
   params.set("page", pagination.page);
   params.set("pageSize", pagination.pageSize);
@@ -1467,6 +1579,22 @@ async function fetchAdminActivities() {
   }
 }
 
+async function fetchAdminActivityDates() {
+  const { activeUser } = getAppState();
+  if (activeUser?.role !== "admin") return;
+
+  try {
+    const data = await requestJson(`${API_BASE}/admin/activity-dates`, {
+      headers: authHeaders()
+    });
+
+    adminActivityDates = Array.isArray(data.dates) ? data.dates : [];
+    syncAdminUserFilterControls(getAppState().adminUserFilters);
+  } catch (error) {
+    console.error("Failed to fetch activity dates:", error);
+  }
+}
+
 async function updateUserRole(userId, role) {
   try {
     await requestJson(`${API_BASE}/admin/users/${userId}`, {
@@ -1483,20 +1611,15 @@ async function updateUserRole(userId, role) {
   }
 }
 
-async function deleteUser(userId) {
-  if (!confirm("Delete this user account?")) return;
-
-  try {
-    await requestJson(`${API_BASE}/admin/users/${userId}`, {
-      method: "DELETE",
-      headers: authHeaders()
-    });
-
-    showToast("User deleted successfully");
-    refreshAdmin();
-  } catch (error) {
-    showToast(error.message);
-  }
+function deleteUser(userId, username) {
+  dispatch({
+    type: "START_DELETE",
+    payload: {
+      type: "user",
+      id: userId,
+      label: username ? `user ${username}` : "this user account"
+    }
+  });
 }
 
 function resetCategoryForm() {
@@ -1558,6 +1681,7 @@ async function deleteCategory(categoryIdValue) {
 }
 
 function refreshAdmin() {
+  fetchAdminActivityDates();
   fetchAdminUsers();
   fetchAdminActivities();
 }
@@ -1668,11 +1792,12 @@ if (cancelDeleteBtn) {
 
 if (confirmDeleteBtn) {
   confirmDeleteBtn.addEventListener("click", async function () {
-    const { deleteTargetId } = getAppState();
-    if (deleteTargetId === null) return;
+    const { deleteTarget } = getAppState();
+    if (!deleteTarget) return;
 
-    const targetId = deleteTargetId;
-    const element = document.querySelector(`[data-id='${targetId}']`);
+    const targetId = deleteTarget.id;
+    const targetType = deleteTarget.type || "expense";
+    const element = targetType === "expense" ? document.querySelector(`[data-id='${targetId}']`) : null;
 
     if (element) {
       element.classList.add("removing");
@@ -1680,17 +1805,26 @@ if (confirmDeleteBtn) {
 
     setTimeout(async () => {
       try {
-        await requestJson(`${API_URL}/${targetId}`, {
+        const url = targetType === "user"
+          ? `${API_BASE}/admin/users/${targetId}`
+          : `${API_URL}/${targetId}`;
+
+        await requestJson(url, {
           method: "DELETE",
           headers: authHeaders()
         });
 
         dispatch({ type: "CANCEL_DELETE" });
-        refreshAll();
-        showToast("Expense deleted successfully");
+        if (targetType === "user") {
+          refreshAdmin();
+          showToast("User deleted successfully");
+        } else {
+          refreshAll();
+          showToast("Expense deleted successfully");
+        }
       } catch (error) {
-        console.error("Failed to delete expense:", error);
-        showToast(error.message || "Failed to delete expense");
+        console.error(`Failed to delete ${targetType}:`, error);
+        showToast(error.message || `Failed to delete ${targetType}`);
       }
     }, 300);
   });
@@ -1760,7 +1894,7 @@ function createExpenseCard(expense, options = {}) {
     });
 
     deleteBtn.addEventListener("click", function () {
-      dispatch({ type: "START_DELETE", payload: { id: expense.id } });
+      dispatch({ type: "START_DELETE", payload: { type: "expense", id: expense.id } });
     });
 
     actions.append(editBtn, deleteBtn);
@@ -2055,9 +2189,23 @@ if (adminRoleFilter) {
   });
 }
 
-if (adminActivityDateFilter) {
-  adminActivityDateFilter.addEventListener("input", function () {
-    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "date", value: this.value } });
+if (adminActivityYearFilter) {
+  adminActivityYearFilter.addEventListener("change", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "dateYear", value: this.value } });
+    refreshAdmin();
+  });
+}
+
+if (adminActivityMonthFilter) {
+  adminActivityMonthFilter.addEventListener("change", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "dateMonth", value: this.value } });
+    refreshAdmin();
+  });
+}
+
+if (adminActivityDayFilter) {
+  adminActivityDayFilter.addEventListener("change", function () {
+    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "dateDay", value: this.value } });
     refreshAdmin();
   });
 }

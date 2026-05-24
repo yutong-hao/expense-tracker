@@ -194,7 +194,7 @@ body {
 
 .admin-user-controls {
   display: grid;
-  grid-template-columns: minmax(190px, 1.3fr) repeat(3, minmax(128px, 1fr)) auto;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(116px, 0.75fr) minmax(270px, 1.45fr) minmax(128px, 0.85fr) auto;
   gap: 10px;
   margin: 8px 0 14px;
 }
@@ -205,6 +205,12 @@ body {
   min-height: 44px;
   margin: 0;
   font-size: 15px;
+}
+
+.admin-date-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .admin-user-controls button {

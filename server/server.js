@@ -133,6 +133,48 @@ function getActivityActionPattern(action) {
   return action;
 }
 
+function getActivityDateFilter(queryParams) {
+  if (isValidDate(queryParams.date)) {
+    const [year, month, day] = String(queryParams.date).split("-");
+    return { year, month, day };
+  }
+
+  const year = String(queryParams.dateYear || "");
+  const month = String(queryParams.dateMonth || "");
+  const day = String(queryParams.dateDay || "");
+
+  if (!/^[1-9]\d{3}$/.test(year)) return null;
+  if (!/^(0[1-9]|1[0-2])$/.test(month)) return { year, month: "", day: "" };
+  if (!/^(0[1-9]|[12]\d|3[01])$/.test(day)) return { year, month, day: "" };
+
+  return { year, month, day };
+}
+
+function createActivityDateCondition(column, queryParams) {
+  const filter = getActivityDateFilter(queryParams);
+
+  if (!filter) return null;
+
+  if (filter.year && filter.month && filter.day) {
+    return {
+      sql: `DATE(${column}) = ?`,
+      params: [`${filter.year}-${filter.month}-${filter.day}`]
+    };
+  }
+
+  if (filter.year && filter.month) {
+    return {
+      sql: `DATE_FORMAT(${column}, '%Y-%m') = ?`,
+      params: [`${filter.year}-${filter.month}`]
+    };
+  }
+
+  return {
+    sql: `YEAR(${column}) = ?`,
+    params: [filter.year]
+  };
+}
+
 function base64Url(input) {
   return Buffer.from(input)
     .toString("base64")
@@ -418,8 +460,14 @@ app.put("/api/auth/profile", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    if (wantsPasswordChange && !(await verifyPassword(currentPassword, user.password_hash))) {
-      return res.status(400).json({ error: "Current password is incorrect" });
+    if (wantsPasswordChange) {
+      if (!(await verifyPassword(currentPassword, user.password_hash))) {
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+
+      if (String(newPassword) === String(currentPassword)) {
+        return res.status(400).json({ error: "New password must be different from current password" });
+      }
     }
 
     const updates = ["username = ?"];
@@ -894,13 +942,33 @@ app.get("/api/summary/month-expenses", authenticate, async (req, res) => {
   }
 });
 
+app.get("/api/admin/activity-dates", authenticate, requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await query(`
+      SELECT DISTINCT DATE_FORMAT(created_at, '%Y-%m-%d') AS activity_date
+      FROM user_activity
+      ORDER BY activity_date DESC
+    `);
+
+    res.json({
+      dates: rows.map(row => row.activity_date).filter(Boolean)
+    });
+  } catch (err) {
+    console.error("Failed to fetch activity dates:", err);
+    res.status(500).json({ error: "Failed to fetch activity dates" });
+  }
+});
+
 app.get("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
-  const { search = "", role = "", date = "", action = "" } = req.query;
+  const { search = "", role = "", action = "" } = req.query;
   const { page, pageSize, offset } = getPagination(req.query);
   const where = [];
   const params = [];
   const searchText = String(search).trim();
   const actionPattern = getActivityActionPattern(action);
+  const dateCondition = createActivityDateCondition("ax.created_at", req.query);
+  const activityWhere = [];
+  const activityParams = [];
 
   if (searchText) {
     where.push("u.username LIKE ?");
@@ -912,14 +980,19 @@ app.get("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
     params.push(role);
   }
 
-  if (isValidDate(date)) {
-    where.push("EXISTS (SELECT 1 FROM user_activity ax WHERE ax.user_id = u.id AND DATE(ax.created_at) = ?)");
-    params.push(date);
+  if (dateCondition) {
+    activityWhere.push(dateCondition.sql);
+    activityParams.push(...dateCondition.params);
   }
 
   if (actionPattern) {
-    where.push("EXISTS (SELECT 1 FROM user_activity ax WHERE ax.user_id = u.id AND ax.action LIKE ?)");
-    params.push(actionPattern);
+    activityWhere.push("ax.action LIKE ?");
+    activityParams.push(actionPattern);
+  }
+
+  if (activityWhere.length) {
+    where.push(`EXISTS (SELECT 1 FROM user_activity ax WHERE ax.user_id = u.id AND ${activityWhere.join(" AND ")})`);
+    params.push(...activityParams);
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -1007,12 +1080,13 @@ app.delete("/api/admin/users/:id", authenticate, requireAdmin, async (req, res) 
 });
 
 app.get("/api/admin/activities", authenticate, requireAdmin, async (req, res) => {
-  const { search = "", role = "", date = "", action = "" } = req.query;
+  const { search = "", role = "", action = "" } = req.query;
   const { page, pageSize, offset } = getPagination(req.query);
   const where = [];
   const params = [];
   const searchText = String(search).trim();
   const actionPattern = getActivityActionPattern(action);
+  const dateCondition = createActivityDateCondition("a.created_at", req.query);
 
   if (searchText) {
     where.push("u.username LIKE ?");
@@ -1024,9 +1098,9 @@ app.get("/api/admin/activities", authenticate, requireAdmin, async (req, res) =>
     params.push(role);
   }
 
-  if (isValidDate(date)) {
-    where.push("DATE(a.created_at) = ?");
-    params.push(date);
+  if (dateCondition) {
+    where.push(dateCondition.sql);
+    params.push(...dateCondition.params);
   }
 
   if (actionPattern) {
