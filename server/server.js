@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
+const crypto = require("node:crypto");
 const db = require("./db");
 
 const app = express();
@@ -21,6 +22,49 @@ function query(sql, params = []) {
 
 function isValidDate(dateStr) {
   return /^[1-9]\d{3}-\d{2}-\d{2}$/.test(dateStr);
+}
+
+function getTodayDateString() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isFutureDate(dateStr) {
+  return isValidDate(dateStr) && dateStr > getTodayDateString();
+}
+
+function isPositiveAmount(value) {
+  const amount = Number.parseFloat(value);
+  return Number.isFinite(amount) && amount > 0;
+}
+
+function getPagination(queryParams) {
+  const page = Math.max(1, Number.parseInt(queryParams.page, 10) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number.parseInt(queryParams.pageSize, 10) || 10));
+
+  return {
+    page,
+    pageSize,
+    offset: (page - 1) * pageSize
+  };
+}
+
+function createPagination(total, page, pageSize) {
+  return {
+    page,
+    pageSize,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    total
+  };
+}
+
+function getActivityActionPattern(action) {
+  if (!action) return "";
+  if (["create", "update", "delete"].includes(action)) return `${action}%`;
+  return action;
 }
 
 function base64Url(input) {
@@ -365,17 +409,57 @@ app.post("/api/auth/logout", authenticate, async (req, res) => {
   res.json({ message: "Logout recorded" });
 });
 
-app.get("/api/expenses", authenticate, (req, res) => {
-  const sql = "SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC";
+app.get("/api/expenses", authenticate, async (req, res) => {
+  const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc" } = req.query;
+  const where = ["user_id = ?"];
+  const params = [req.user.id];
+  const searchText = String(search).trim();
+  const minValue = Number.parseFloat(minAmount);
+  const maxValue = Number.parseFloat(maxAmount);
+  const sortMap = {
+    "date-desc": "expense_date DESC, id DESC",
+    "date-asc": "expense_date ASC, id ASC",
+    "amount-desc": "CAST(amount AS DECIMAL(10,2)) DESC, id DESC",
+    "amount-asc": "CAST(amount AS DECIMAL(10,2)) ASC, id ASC",
+    "title-asc": "title ASC, id ASC"
+  };
 
-  db.query(sql, [req.user.id], (err, results) => {
-    if (err) {
-      console.error("Failed to fetch expenses:", err);
-      return res.status(500).json({ error: "Database query failed" });
-    }
+  if (searchText) {
+    where.push("(title LIKE ? OR category LIKE ? OR description LIKE ?)");
+    params.push(`%${searchText}%`, `%${searchText}%`, `%${searchText}%`);
+  }
 
-    res.json(results);
-  });
+  if (category) {
+    where.push("category = ?");
+    params.push(category);
+  }
+
+  if (Number.isFinite(minValue)) {
+    where.push("CAST(amount AS DECIMAL(10,2)) >= ?");
+    params.push(minValue);
+  }
+
+  if (Number.isFinite(maxValue)) {
+    where.push("CAST(amount AS DECIMAL(10,2)) <= ?");
+    params.push(maxValue);
+  }
+
+  try {
+    const [expenses] = await query(
+      `
+        SELECT *
+        FROM expenses
+        WHERE ${where.join(" AND ")}
+        ORDER BY ${sortMap[sort] || sortMap["date-desc"]}
+      `,
+      params
+    );
+
+    res.json(expenses);
+  } catch (err) {
+    console.error("Failed to fetch expenses:", err);
+    res.status(500).json({ error: "Database query failed" });
+  }
 });
 
 app.post("/api/expenses", authenticate, (req, res) => {
@@ -385,10 +469,18 @@ app.post("/api/expenses", authenticate, (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
+  if (!isPositiveAmount(amount)) {
+    return res.status(400).json({ error: "Amount must be greater than 0" });
+  }
+
   if (!isValidDate(date)) {
     return res.status(400).json({
       error: "Date must be YYYY-MM-DD and year cannot start with 0"
     });
+  }
+
+  if (isFutureDate(date)) {
+    return res.status(400).json({ error: "Future dates cannot be selected" });
   }
 
   const sql = `
@@ -419,10 +511,18 @@ app.put("/api/expenses/:id", authenticate, (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
+  if (!isPositiveAmount(amount)) {
+    return res.status(400).json({ error: "Amount must be greater than 0" });
+  }
+
   if (!isValidDate(date)) {
     return res.status(400).json({
       error: "Date must be YYYY-MM-DD and year cannot start with 0"
     });
+  }
+
+  if (isFutureDate(date)) {
+    return res.status(400).json({ error: "Future dates cannot be selected" });
   }
 
   const sql = `
@@ -505,7 +605,46 @@ app.get("/api/summary/monthly", authenticate, async (req, res) => {
 });
 
 app.get("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
+  const { search = "", role = "", date = "", action = "" } = req.query;
+  const { page, pageSize, offset } = getPagination(req.query);
+  const where = [];
+  const params = [];
+  const searchText = String(search).trim();
+  const actionPattern = getActivityActionPattern(action);
+
+  if (searchText) {
+    where.push("u.username LIKE ?");
+    params.push(`%${searchText}%`);
+  }
+
+  if (["user", "admin"].includes(role)) {
+    where.push("u.role = ?");
+    params.push(role);
+  }
+
+  if (isValidDate(date)) {
+    where.push("EXISTS (SELECT 1 FROM user_activity ax WHERE ax.user_id = u.id AND DATE(ax.created_at) = ?)");
+    params.push(date);
+  }
+
+  if (actionPattern) {
+    where.push("EXISTS (SELECT 1 FROM user_activity ax WHERE ax.user_id = u.id AND ax.action LIKE ?)");
+    params.push(actionPattern);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
   try {
+    const [countRows] = await query(
+      `
+        SELECT COUNT(*) AS total
+        FROM users u
+        ${whereSql}
+      `,
+      params
+    );
+
+    const total = Number(countRows[0]?.total || 0);
     const [users] = await query(`
       SELECT
         u.id,
@@ -516,11 +655,16 @@ app.get("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
         COUNT(a.id) AS activity_count
       FROM users u
       LEFT JOIN user_activity a ON a.user_id = u.id
+      ${whereSql}
       GROUP BY u.id, u.username, u.role, u.created_at
       ORDER BY u.id ASC
-    `);
+      LIMIT ? OFFSET ?
+    `, [...params, pageSize, offset]);
 
-    res.json(users);
+    res.json({
+      users,
+      pagination: createPagination(total, page, pageSize)
+    });
   } catch (err) {
     console.error("Failed to fetch users:", err);
     res.status(500).json({ error: "Failed to fetch users" });
@@ -573,7 +717,44 @@ app.delete("/api/admin/users/:id", authenticate, requireAdmin, async (req, res) 
 });
 
 app.get("/api/admin/activities", authenticate, requireAdmin, async (req, res) => {
+  const { search = "", role = "", date = "", action = "" } = req.query;
+  const { page, pageSize, offset } = getPagination(req.query);
+  const where = [];
+  const params = [];
+  const searchText = String(search).trim();
+  const actionPattern = getActivityActionPattern(action);
+
+  if (searchText) {
+    where.push("u.username LIKE ?");
+    params.push(`%${searchText}%`);
+  }
+
+  if (["user", "admin"].includes(role)) {
+    where.push("u.role = ?");
+    params.push(role);
+  }
+
+  if (isValidDate(date)) {
+    where.push("DATE(a.created_at) = ?");
+    params.push(date);
+  }
+
+  if (actionPattern) {
+    where.push("a.action LIKE ?");
+    params.push(actionPattern);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
   try {
+    const [countRows] = await query(`
+      SELECT COUNT(*) AS total
+      FROM user_activity a
+      JOIN users u ON u.id = a.user_id
+      ${whereSql}
+    `, params);
+
+    const total = Number(countRows[0]?.total || 0);
     const [activities] = await query(`
       SELECT
         a.id,
@@ -584,11 +765,15 @@ app.get("/api/admin/activities", authenticate, requireAdmin, async (req, res) =>
         u.role
       FROM user_activity a
       JOIN users u ON u.id = a.user_id
+      ${whereSql}
       ORDER BY a.created_at DESC, a.id DESC
-      LIMIT 100
-    `);
+      LIMIT ? OFFSET ?
+    `, [...params, pageSize, offset]);
 
-    res.json(activities);
+    res.json({
+      activities,
+      pagination: createPagination(total, page, pageSize)
+    });
   } catch (err) {
     console.error("Failed to fetch user activity:", err);
     res.status(500).json({ error: "Failed to fetch user activity" });

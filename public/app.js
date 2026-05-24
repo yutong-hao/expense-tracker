@@ -57,6 +57,8 @@ const expenseWorkspace = document.getElementById("expense-workspace");
 const form = document.getElementById("expense-form");
 const expenseList = document.getElementById("expense-list");
 const totalAmount = document.getElementById("total-amount");
+const amountInput = document.getElementById("amount");
+const expenseDate = document.getElementById("date");
 const expenseSearch = document.getElementById("expense-search");
 const filterCategory = document.getElementById("filter-category");
 const filterMinAmount = document.getElementById("filter-min-amount");
@@ -294,8 +296,8 @@ function renderAppState(state, previousState, action) {
 
   if (action.type === "SET_SESSION" || action.type === "CLEAR_SESSION") {
     if (action.type === "CLEAR_SESSION") {
-      editModal.classList.add("hidden");
-      deleteModal.classList.add("hidden");
+      hideModal(editModal);
+      hideModal(deleteModal);
       editForm.reset();
     }
 
@@ -329,15 +331,20 @@ function renderAppState(state, previousState, action) {
       editAmount.value = expense.amount;
       editDate.value = String(expense.expense_date).split("T")[0];
       editDescription.value = expense.description || "";
-      editModal.classList.remove("hidden");
+      showModal(editModal);
     } else {
-      editModal.classList.add("hidden");
-      editForm.reset();
+      hideModal(editModal, function () {
+        editForm.reset();
+      });
     }
   }
 
   if (state.deleteTargetId !== previousState.deleteTargetId) {
-    deleteModal.classList.toggle("hidden", state.deleteTargetId === null);
+    if (state.deleteTargetId === null) {
+      hideModal(deleteModal);
+    } else {
+      showModal(deleteModal);
+    }
   }
 }
 
@@ -352,6 +359,114 @@ function authHeaders() {
 
 function isValidDate(dateStr) {
   return /^[1-9]\d{3}-\d{2}-\d{2}$/.test(dateStr);
+}
+
+function getTodayDateString() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isFutureDate(dateStr) {
+  return isValidDate(dateStr) && dateStr > getTodayDateString();
+}
+
+function isPositiveAmount(value) {
+  const amount = Number.parseFloat(value);
+  return Number.isFinite(amount) && amount > 0;
+}
+
+function validateExpenseFields(amountValue, dateValue) {
+  if (!setAmountValidity(amountInput, amountValue)) {
+    amountInput.reportValidity();
+    return false;
+  }
+
+  if (!isValidDate(dateValue)) {
+    expenseDate.setCustomValidity("Date must be YYYY-MM-DD and the year cannot start with 0");
+    expenseDate.reportValidity();
+    return false;
+  }
+
+  if (isFutureDate(dateValue)) {
+    expenseDate.setCustomValidity("Future dates cannot be selected");
+    expenseDate.reportValidity();
+    return false;
+  }
+
+  expenseDate.setCustomValidity("");
+  return true;
+}
+
+function validateEditExpenseFields() {
+  if (!setAmountValidity(editAmount, editAmount.value)) {
+    editAmount.reportValidity();
+    return false;
+  }
+
+  if (!isValidDate(editDate.value)) {
+    editDate.setCustomValidity("Date must be YYYY-MM-DD and the year cannot start with 0");
+    editDate.reportValidity();
+    return false;
+  }
+
+  if (isFutureDate(editDate.value)) {
+    editDate.setCustomValidity("Future dates cannot be selected");
+    editDate.reportValidity();
+    return false;
+  }
+
+  editDate.setCustomValidity("");
+  return true;
+}
+
+function setAmountValidity(input, value = input?.value) {
+  if (!input) return true;
+  const valid = isPositiveAmount(value);
+  input.setCustomValidity(valid ? "" : "Amount must be greater than 0");
+  return valid;
+}
+
+function configureDateInputs() {
+  const today = getTodayDateString();
+
+  [expenseDate, editDate].forEach(input => {
+    if (!input) return;
+    input.max = today;
+    input.addEventListener("input", function () {
+      if (isFutureDate(this.value)) {
+        this.value = "";
+        this.setCustomValidity("Future dates cannot be selected");
+        this.reportValidity();
+        return;
+      }
+
+      this.setCustomValidity("");
+    });
+  });
+}
+
+function showModal(modal) {
+  if (!modal) return;
+  modal.classList.remove("modal-closing");
+  modal.classList.remove("hidden");
+}
+
+function hideModal(modal, afterClose) {
+  if (!modal || modal.classList.contains("hidden")) {
+    if (afterClose) afterClose();
+    return;
+  }
+
+  modal.classList.add("modal-closing");
+  modal.addEventListener("animationend", function handleClose(event) {
+    if (event.target !== modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("modal-closing");
+    if (afterClose) afterClose();
+  }, { once: true });
 }
 
 function formatDateTime(value) {
@@ -642,12 +757,13 @@ function openAccountModal() {
   accountUsername.value = activeUser?.username || "";
   accountCurrentPassword.value = "";
   accountNewPassword.value = "";
-  accountModal.classList.remove("hidden");
+  showModal(accountModal);
 }
 
 function closeAccountModal() {
-  accountModal.classList.add("hidden");
-  accountForm.reset();
+  hideModal(accountModal, function () {
+    accountForm.reset();
+  });
 }
 
 accountMenuBtn.addEventListener("click", openAccountModal);
@@ -879,18 +995,20 @@ function refreshAll() {
 form.addEventListener("submit", async function (event) {
   event.preventDefault();
 
+  const amountValue = amountInput.value;
+  const dateValue = expenseDate.value;
+
+  if (!validateExpenseFields(amountValue, dateValue)) {
+    return;
+  }
+
   const expense = {
     title: document.getElementById("title").value,
     category: document.getElementById("category").value,
-    amount: parseFloat(document.getElementById("amount").value).toFixed(2),
-    date: document.getElementById("date").value,
+    amount: parseFloat(amountValue).toFixed(2),
+    date: dateValue,
     description: document.getElementById("description").value
   };
-
-  if (!isValidDate(expense.date)) {
-    alert("Date must be in YYYY-MM-DD format, and the year must be 4 digits without leading zeros.");
-    return;
-  }
 
   try {
     await requestJson(API_URL, {
@@ -917,6 +1035,10 @@ if (editForm) {
   editForm.addEventListener("submit", async function (event) {
     event.preventDefault();
 
+    if (!validateEditExpenseFields()) {
+      return;
+    }
+
     const updatedExpense = {
       title: editTitle.value,
       category: editCategory.value,
@@ -924,11 +1046,6 @@ if (editForm) {
       date: editDate.value,
       description: editDescription.value
     };
-
-    if (!isValidDate(updatedExpense.date)) {
-      alert("Date must be in YYYY-MM-DD format, and the year must be 4 digits without leading zeros.");
-      return;
-    }
 
     try {
       await requestJson(`${API_URL}/${editId.value}`, {
@@ -1228,15 +1345,41 @@ function formatAmountInput(input) {
   }
 
   input.value = value;
+
+  if (value && Number.parseFloat(value) === 0) {
+    input.value = "";
+    input.setCustomValidity("Amount must be greater than 0");
+    input.reportValidity();
+    return;
+  }
+
+  setAmountValidity(input);
 }
 
-document.getElementById("amount").addEventListener("input", function () {
-  formatAmountInput(this);
-});
+function blockZeroAmountEntry(input) {
+  if (!input) return;
 
-document.getElementById("edit-amount").addEventListener("input", function () {
-  formatAmountInput(this);
-});
+  input.addEventListener("beforeinput", function (event) {
+    if (event.inputType !== "insertText" || event.data !== "0") return;
+    const start = this.selectionStart ?? this.value.length;
+    const end = this.selectionEnd ?? this.value.length;
+    const nextValue = `${this.value.slice(0, start)}${event.data}${this.value.slice(end)}`;
+
+    if (Number.parseFloat(nextValue) === 0) {
+      event.preventDefault();
+      this.setCustomValidity("Amount must be greater than 0");
+      this.reportValidity();
+    }
+  });
+
+  input.addEventListener("input", function () {
+    formatAmountInput(this);
+  });
+}
+
+blockZeroAmountEntry(amountInput);
+blockZeroAmountEntry(editAmount);
+configureDateInputs();
 
 if (expenseSearch) {
   expenseSearch.addEventListener("input", function () {
