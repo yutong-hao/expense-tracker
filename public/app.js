@@ -687,6 +687,7 @@ function renderUserCategories(categories) {
     editBtn.addEventListener("click", function () {
       categoryId.value = category.id;
       categoryName.value = category.name;
+      saveCategoryBtn.textContent = "Save";
       cancelCategoryEditBtn.classList.remove("hidden");
       categoryName.focus();
     });
@@ -1502,7 +1503,7 @@ function resetCategoryForm() {
   if (!categoryForm) return;
   categoryForm.reset();
   categoryId.value = "";
-  saveCategoryBtn.textContent = "Save";
+  saveCategoryBtn.textContent = "Add";
   cancelCategoryEditBtn.classList.add("hidden");
 }
 
