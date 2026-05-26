@@ -1,225 +1,194 @@
-# Expense Tracker
+<div align="center">
 
-## Project Description
+# 💰 Expense Tracker
 
-Expense Tracker is a single-page website for recording, organizing, searching, and reviewing personal spending.
+**A personal finance web app that makes it easy to log, organise, and review every dollar you spend.**
 
-The problem this website solves is that users often keep bills in scattered places, making it hard to understand where their money goes, find old records, or review spending patterns. This app provides one place to create expense records, group them into ledgers by category, filter and search bills, review monthly summaries, and manage user accounts through an admin panel.
+Most people lose track of daily spending because there is no single place to capture, filter, and reflect on it. Expense Tracker solves this by combining a category-based ledger, powerful live search, and monthly summaries in one lightweight single-page application — with an admin interface for multi-user environments.
 
-## Main Features
+![JavaScript](https://img.shields.io/badge/JavaScript-ES6-f7df1e?logo=javascript&logoColor=black)
+![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)
+![MySQL](https://img.shields.io/badge/Database-MySQL-4479a1?logo=mysql&logoColor=white)
 
-- User registration and login
-- Secure password hashing with `bcrypt`
-- JWT-style token authentication using Node's built-in `crypto` module
-- User profile editing, password change, account switching, and logout
-- Expense create, read, update, and delete functionality
-- Category-based ledger view for grouped bills
-- Live expense search and filtering by title, category, description, amount range, month, and selected bill
-- Monthly summary panel with interactive year, month, and bill filters
-- Custom ledger category management with stored category colors
-- Admin user management, role editing, user deletion, and activity monitoring
-- Admin activity search, date/action filtering, and pagination
+</div>
 
-## Technical Stack
+---
 
-```text
-Browser
-  |
-  | HTML + CSS + Vanilla JavaScript
-  | fetch() API sends REST requests
-  v
-Node.js Backend
-  |
-  | Express routes and JSON request handling
-  | bcrypt password hashing
-  | crypto-based token signing and verification
-  | mysql2 database queries
-  v
-MySQL Database
-  |
-  | users
-  | expenses
-  | user_activity
-  | categories
+## ✨ Features at a Glance
+
+| Area | What you can do |
+|---|---|
+| **Auth** | Register, log in, change password, switch accounts |
+| **Expenses** | Create, edit, delete, and search bills by title / category / amount / date |
+| **Ledgers** | View bills grouped by colour-coded category; manage custom categories |
+| **Summary** | Filter spending by year → month → individual bill; filters stack with search |
+| **Admin** | Manage users and roles; browse a paginated, filterable activity log |
+
+---
+
+## 🗂 Folder Structure
+
 ```
+expense-tracker/
+│
+├── public/                   # Frontend — everything the browser loads
+│   ├── index.html            #   Page structure and modal scaffolding
+│   ├── style.css             #   Layout, ledger UI, summary UI, responsive styles
+│   └── app.js                #   State management, rendering, search/filter logic, API calls
+│
+├── server/                   # Backend — Node.js + Express
+│   ├── server.js             #   All API routes: auth, expenses, categories, summary, admin
+│   └── db.js                 #   MySQL connection pool (reads from .env)
+│
+├── database/                 # SQL files for setup and sample data
+│   ├── expense_tracker_full.sql   #   ← Recommended: full dump with users, expenses, categories
+│   ├── expense_tracker.sql        #   Minimal schema-only starter
+│   ├── all_expenses.sql           #   Expense data export
+│   └── qaz_user_activity.sql      #   Single-user activity export
+│
+├── .env                      # Local config — create this before running (see below)
+├── package.json
+└── README.md
+```
+
+---
+
+## 🛠 Technical Stack
 
 ### Frontend
-
-- `HTML` for page structure
-- `CSS` for responsive layout, modals, ledgers, admin tables, and summary UI
-- Vanilla `JavaScript` for state management, rendering, form handling, filtering, and API requests
-- Browser `localStorage` for storing the login token and current user session
+- **HTML / CSS / Vanilla JavaScript** — no framework, fully static
+- **`fetch()` API** — sends JSON requests to the backend REST API
+- **`localStorage`** — persists the auth token and current user session across page loads
 
 ### Backend
-
-- `Node.js`
-- `Express`
-- `mysql2`
-- `bcrypt`
-- Node built-in `crypto`
-- `cors`
+- **Node.js + Express** — HTTP server and routing
+- **`mysql2`** — MySQL connection and query execution
+- **`bcrypt`** — hashes passwords before storing; plain-text passwords are never saved
+- **Node `crypto`** — signs and verifies JWT-style auth tokens without an external package
+- **`cors`** — allows the frontend (`:8080`) to call the backend (`:3000`)
 
 ### Database
+- **MySQL** — database name `expense_tracker`
+- Tables: `users` · `expenses` · `categories` · `user_activity`
 
-- MySQL database named `expense_tracker`
-- Main tables: `users`, `expenses`, `user_activity`, and `categories`
+### Dependencies
 
-## Dependencies
+```bash
+npm install        # installs express, cors, mysql2, bcrypt
+```
 
-Install Node dependencies with:
+> Node's built-in `crypto` is used for token signing — no `jsonwebtoken` package required.
+
+---
+
+## 🚀 Getting Started
+
+### 1 — Install dependencies
 
 ```bash
 npm install
 ```
 
-Main dependencies from `package.json`:
+### 2 — Create a `.env` file
 
-- `express`
-- `cors`
-- `mysql2`
-- `bcrypt`
+Create `.env` in the project root:
 
-The token system uses Node's built-in `crypto` module, so no external JWT package is required.
-
-## Setup Notes
-
-If a working `.env` file is already provided with the submitted project, the environment variable setup does not need to be repeated manually. However, `.env` only stores connection settings and secrets; it does not create the MySQL database or import table data.
-
-To restore the database, load the full SQL dump:
-
-```bash
-mysql -u <your_mysql_user> -p < database/expense_tracker_full.sql
-```
-
-The backend reads these values from `.env`:
-
-```text
-DB_HOST
-DB_USER
-DB_PASSWORD
-DB_NAME
-DB_PORT
-JWT_SECRET
-```
-
-Example:
-
-```text
+```env
 DB_HOST=localhost
 DB_USER=root
-DB_PASSWORD=<your_mysql_password>
+DB_PASSWORD=
 DB_NAME=expense_tracker
 DB_PORT=3306
-JWT_SECRET=<your_local_jwt_secret>
+JWT_SECRET=expense-tracker-dev-secret
 ```
 
-Do not publish real `.env` files, real passwords, or private database dumps in a public repository.
+Adjust `DB_USER`, `DB_PASSWORD`, and `DB_PORT` to match your local MySQL setup.
+Use a stable `JWT_SECRET` during demos so existing tokens stay valid while the server is running.
 
-## How To Run The App
-
-### 1. Install dependencies
+### 3 — Load the database
 
 ```bash
-npm install
+mysql -u root < database/expense_tracker_full.sql
+
+# If your MySQL user has a password:
+mysql -u root -p < database/expense_tracker_full.sql
 ```
 
-### 2. Load the database
+> ⚠️ The full dump contains `DROP TABLE IF EXISTS` — it will **replace** any existing data in `users`, `expenses`, `categories`, and `user_activity`.
+
+The dump includes these ready-to-use sample accounts:
+
+| Username | Password | Role  |
+|----------|----------|-------|
+| admin123 | 123456   | Admin |
+| qaz      | qaz123   | User  |
+
+### 4 — Start the backend
 
 ```bash
-mysql -u <your_mysql_user> -p < database/expense_tracker_full.sql
+node server/server.js
 ```
 
-### 3. Start the backend
+→ Runs at **http://localhost:3000**
 
-```bash
-node --env-file=.env server/server.js
-```
+### 5 — Start the frontend
 
-The backend runs at:
-
-```text
-http://localhost:3000
-```
-
-### 4. Start the frontend
-
-In another terminal, serve the `public` folder with a static file server:
+Open a second terminal:
 
 ```bash
 python3 -m http.server 8080 -d public
 ```
 
-The frontend runs at:
+→ Open **http://localhost:8080** in the browser.
 
-```text
-http://localhost:8080
-```
+---
 
-Open `http://localhost:8080` in the browser.
+## 🔌 API Reference
 
-## Frontend And Backend Communication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/register` | Create a new user account |
+| `POST` | `/api/auth/login` | Verify password; return signed auth token |
+| `PUT`  | `/api/auth/profile` | Update username or password |
+| `GET`  | `/api/expenses` | Fetch expenses — supports `search`, `category`, `minAmount`, `maxAmount`, `month`, `sort` query params |
+| `POST` | `/api/expenses` | Create a new expense |
+| `PUT`  | `/api/expenses/:id` | Update an existing expense |
+| `DELETE` | `/api/expenses/:id` | Delete an expense |
+| `GET`  | `/api/summary/monthly` | Monthly spending totals |
+| `GET`  | `/api/summary/month-expenses` | Expenses for a selected month with filters applied |
+| `GET`  | `/api/categories` | List all categories for the current user |
+| `POST / PUT / DELETE` | `/api/categories` | Create, rename, or delete a custom category |
+| `GET`  | `/api/admin/users` | Admin: paginated user list with search and role filter |
+| `GET`  | `/api/admin/activities` | Admin: paginated activity log with date and action filter |
 
-The frontend loads from `localhost:8080`, while the backend API runs at `localhost:3000/api`.
+All protected routes require an `Authorization: Bearer <token>` header.
 
-For register and login, the frontend sends username and password data to the backend through `POST` requests because the data must be sent in the JSON request body instead of in the URL. The backend uses `express.json()` to read the request body from `req.body`, hashes passwords with `bcrypt`, stores data in MySQL through `mysql2`, and returns a signed authentication token after successful login.
+---
 
-For search and filtering, the frontend reads the user's selected filters, builds query parameters, and sends them to backend API endpoints such as `/api/expenses`, `/api/admin/users`, and `/api/admin/activities`. The backend converts those query parameters into SQL conditions, queries MySQL, and returns only the matching records, so the interface and database stay connected through live API communication.
+## 👥 Team Contributions
 
-## Folder Structure
+### Yutong — Auth · User Profile · Admin Panel
 
-```text
-expense-tracker/
-|-- README.md
-|-- package.json
-|-- package-lock.json
-|-- database/
-|   |-- expense_tracker.sql
-|   |-- expense_tracker_full.sql
-|   `-- other local export files
-|-- public/
-|   |-- index.html
-|   |-- style.css
-|   `-- app.js
-`-- server/
-    |-- db.js
-    `-- server.js
-```
+- **Registration & login** — Frontend sends credentials via `POST`; backend reads them with `express.json()`, hashes the password with `bcrypt`, and returns a signed token on success.
+- **Secure password storage** — Passwords are never stored in plain text; `bcrypt` hashing ensures the database alone cannot expose real credentials.
+- **Token-based auth** — After login, the backend signs a JWT-style token with Node `crypto`; the frontend stores it in `localStorage` and attaches it to every subsequent API request.
+- **User profile** — Users can update their username or change their password; the frontend pre-validates that the new password differs from the old one before the backend also enforces the same rule.
+- **Admin user management** — Admins can view all users, change roles, and delete accounts via a live-search panel with role filtering and pagination.
+- **Activity log** — Every significant action (login, logout, register, expense changes, category changes) is recorded; admins can filter by date or action type, with pagination and date options limited to days that actually have activity.
 
-## What Each Folder Contains
+---
 
-- `public/` contains the frontend files served in the browser.
-- `public/index.html` defines the page structure for authentication, expenses, ledgers, summary, admin tables, and modals.
-- `public/style.css` defines the visual layout, responsive behavior, ledgers, summary panel, admin controls, and modal styling.
-- `public/app.js` handles frontend state, rendering, validation, live search/filtering, forms, authentication flow, and API requests.
-- `server/` contains the backend Node.js code.
-- `server/server.js` defines Express routes for authentication, profile updates, expenses, summaries, categories, admin users, and activity logs.
-- `server/db.js` creates the MySQL connection using environment variables.
-- `database/` contains SQL files used to set up or restore the MySQL database.
-- `database/expense_tracker_full.sql` is the full database dump with users, expenses, activity logs, and categories.
-- `database/expense_tracker.sql` is a smaller starter database file.
+### Ziyi — Expense Ledger · Search & Filter · Category Management
 
-## Team Contribution
+- **Category ledger view** — Bills are automatically sorted into colour-coded ledgers when added, giving users a visual per-category breakdown at a glance.
+- **Live search with backend filtering** — As the user types or adjusts filters (title, category, description, min/max amount, sort order), the frontend sends updated query parameters to `GET /api/expenses` and re-renders results without a page reload, keeping the UI in sync with the database at all times.
+- **Stacked summary filters** — Users can drill down from year → month → individual bill in the summary panel; summary filters and search filters are applied together so every combination works correctly.
+- **Ledger category management** — Users can create, rename, and delete custom ledger categories; category colours are persisted in the database so they survive page reloads.
 
-### Yutong
+---
 
-- Implemented register and login so the frontend sends username and password to the backend through `POST` API requests, while Express reads the JSON body with `express.json()`.
-- Added secure password storage with `bcrypt` so real passwords are not saved as plain text in MySQL.
-- Built JWT-style authentication with Node's built-in `crypto` module so protected requests can verify the logged-in user.
-- Created user profile settings so users can update their username, change password with current-password validation, switch accounts, and log out.
-- Implemented admin access so admin users can manage accounts, change roles, delete users, and review activity logs.
-- Added activity logging for login, logout, register, expense changes, and category changes.
-- Built admin search, role filtering, activity date/action filtering, and pagination, with time filters showing only dates that actually have activity.
+## 📝 Notes
 
-### Ziyi
-
-- Implemented bill creation and category-based ledgers so expenses are stored and displayed under their related categories.
-- Built expense live search and filtering so users can search by title, category, or description and combine category, amount, sorting, month, and bill filters.
-- Connected frontend search controls to backend API queries so filter choices in the browser return matching records from MySQL.
-- Built the summary panel so users can select a year, click a month to filter bills, click again to clear it, and select a specific bill inside a month.
-- Made normal search filters and summary filters work together so the ledger area only shows bills that match all active conditions.
-- Implemented Ledger Settings so users can create, rename, and delete custom ledger categories.
-- Stored ledger color data in the database so each category can appear as a separate visual ledger in the UI.
-
-## Overall Result
-
-This website demonstrates user authentication, secure password hashing, token-based authorization, expense CRUD, live frontend-backend search and filtering, admin management, user profile settings, activity logs, summary filtering, and ledger category settings.
+- The frontend is a fully static site — it must be served by a file server (e.g. `python3 -m http.server`); simply opening `index.html` in a browser will not work due to CORS.
+- The backend must be running before any API-dependent feature (login, expenses, summary, admin) will work.
+- `server/db.js` reads all database settings from `.env` — ensure the file exists before starting the server.
