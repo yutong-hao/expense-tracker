@@ -18,6 +18,9 @@ let selectedSummaryYear = String(new Date().getFullYear());
 let selectedSummaryMonth = "";
 let selectedSummaryExpenseId = "";
 let adminActivityDates = [];
+let adminDatePickerMode = "year";
+let adminDatePickerYear = "";
+let adminDatePickerMonth = "";
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -57,9 +60,11 @@ const cancelCategoryEditBtn = document.getElementById("cancel-category-edit");
 const closeCategoryModalBtn = document.getElementById("close-category-modal");
 const adminUserSearch = document.getElementById("admin-user-search");
 const adminRoleFilter = document.getElementById("admin-role-filter");
-const adminActivityYearFilter = document.getElementById("admin-activity-year-filter");
-const adminActivityMonthFilter = document.getElementById("admin-activity-month-filter");
-const adminActivityDayFilter = document.getElementById("admin-activity-day-filter");
+const adminDatePickerTrigger = document.getElementById("admin-date-picker-trigger");
+const adminDatePickerLabel = document.getElementById("admin-date-picker-label");
+const adminDatePickerPopover = document.getElementById("admin-date-picker-popover");
+const adminDatePickerHeading = document.getElementById("admin-date-picker-heading");
+const adminDatePickerGrid = document.getElementById("admin-date-picker-grid");
 const activityActionFilter = document.getElementById("activity-action-filter");
 const adminClearFiltersBtn = document.getElementById("admin-clear-filters");
 const userPrevPage = document.getElementById("user-prev-page");
@@ -758,7 +763,8 @@ function getActivityDateParts(date) {
 }
 
 function getAvailableActivityYears() {
-  return [...new Set(adminActivityDates.map(date => getActivityDateParts(date).year).filter(Boolean))];
+  return [...new Set(adminActivityDates.map(date => getActivityDateParts(date).year).filter(Boolean))]
+    .sort((a, b) => Number(b) - Number(a));
 }
 
 function getAvailableActivityMonths(year) {
@@ -766,7 +772,8 @@ function getAvailableActivityMonths(year) {
     .map(date => getActivityDateParts(date))
     .filter(parts => parts.year === year)
     .map(parts => parts.month)
-    .filter(Boolean))];
+    .filter(Boolean))]
+    .sort((a, b) => Number(a) - Number(b));
 }
 
 function getAvailableActivityDays(year, month) {
@@ -774,48 +781,237 @@ function getAvailableActivityDays(year, month) {
     .map(date => getActivityDateParts(date))
     .filter(parts => parts.year === year && parts.month === month)
     .map(parts => parts.day)
-    .filter(Boolean))];
+    .filter(Boolean))]
+    .sort((a, b) => Number(a) - Number(b));
 }
 
-function setAdminDateSelectOptions(select, placeholder, values, formatter) {
-  if (!select) return;
+function getMonthName(month) {
+  const date = new Date(2020, Number(month) - 1, 1);
+  return date.toLocaleString("en-AU", { month: "short" });
+}
 
-  select.innerHTML = "";
+function formatAdminDateFilterLabel(filters) {
+  if (filters.dateYear && filters.dateMonth && filters.dateDay) {
+    return `${filters.dateDay} ${getMonthName(filters.dateMonth)} ${filters.dateYear}`;
+  }
 
-  const defaultOption = document.createElement("option");
-  defaultOption.value = "";
-  defaultOption.textContent = placeholder;
-  select.appendChild(defaultOption);
+  if (filters.dateYear && filters.dateMonth) {
+    return `${getMonthName(filters.dateMonth)} ${filters.dateYear}`;
+  }
 
-  values.forEach(value => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = formatter ? formatter(value) : value;
-    select.appendChild(option);
+  if (filters.dateYear) {
+    return filters.dateYear;
+  }
+
+  return "All dates";
+}
+
+function getAdminDateModeFromFilters(filters) {
+  if (filters.dateYear && filters.dateMonth && filters.dateDay) return "day";
+  if (filters.dateYear && filters.dateMonth) return "month";
+  return "year";
+}
+
+function setAdminDatePickerMode(mode) {
+  adminDatePickerMode = mode;
+  renderAdminDateFilterOptions(getAppState().adminUserFilters);
+}
+
+function closeAdminDatePicker() {
+  if (!adminDatePickerPopover || !adminDatePickerTrigger) return;
+  adminDatePickerPopover.classList.add("hidden");
+  adminDatePickerTrigger.setAttribute("aria-expanded", "false");
+}
+
+function toggleAdminDatePicker() {
+  if (!adminDatePickerPopover || !adminDatePickerTrigger) return;
+  const shouldOpen = adminDatePickerPopover.classList.contains("hidden");
+  adminDatePickerPopover.classList.toggle("hidden", !shouldOpen);
+  adminDatePickerTrigger.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen) {
+    renderAdminDateFilterOptions(getAppState().adminUserFilters);
+  }
+}
+
+function selectAdminActivityDateFilter(nextFilter) {
+  ["dateYear", "dateMonth", "dateDay"].forEach(name => {
+    dispatch({
+      type: "SET_ADMIN_USER_FILTER",
+      payload: { name, value: nextFilter[name] || "" }
+    });
+  });
+
+  closeAdminDatePicker();
+  refreshAdmin();
+}
+
+function createAdminDateButton(label, className, onClick, options = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.disabled = Boolean(options.disabled);
+  if (options.active) button.classList.add("active");
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function renderAdminDateYearStrip(filters) {
+  const years = getAvailableActivityYears();
+  const strip = document.createElement("div");
+  strip.className = "admin-date-year-strip";
+
+  years.forEach(year => {
+    strip.appendChild(createAdminDateButton(year, "admin-date-chip", function () {
+      adminDatePickerYear = year;
+      const months = getAvailableActivityMonths(adminDatePickerYear);
+      adminDatePickerMonth = months.includes(adminDatePickerMonth)
+        ? adminDatePickerMonth
+        : (months[0] || "");
+      renderAdminDateFilterOptions(filters);
+    }, {
+      active: adminDatePickerYear === year
+    }));
+  });
+
+  return strip;
+}
+
+function renderAdminDateMonthStrip(filters) {
+  const months = getAvailableActivityMonths(adminDatePickerYear);
+  const strip = document.createElement("div");
+  strip.className = "admin-date-month-strip";
+
+  months.forEach(month => {
+    strip.appendChild(createAdminDateButton(getMonthName(month), "admin-date-chip", function () {
+      adminDatePickerMonth = month;
+      renderAdminDateFilterOptions(filters);
+    }, {
+      active: adminDatePickerMonth === month
+    }));
+  });
+
+  return strip;
+}
+
+function renderAdminYearPicker(filters) {
+  adminDatePickerHeading.textContent = "Select year";
+  getAvailableActivityYears().forEach(year => {
+    adminDatePickerGrid.appendChild(createAdminDateButton(year, "admin-date-cell", function () {
+      selectAdminActivityDateFilter({ dateYear: year });
+    }, {
+      active: filters.dateYear === year && !filters.dateMonth
+    }));
   });
 }
 
+function renderAdminMonthPicker(filters) {
+  adminDatePickerHeading.textContent = `Select month in ${adminDatePickerYear || "year"}`;
+  adminDatePickerGrid.appendChild(renderAdminDateYearStrip(filters));
+
+  const monthGrid = document.createElement("div");
+  monthGrid.className = "admin-date-picker-grid admin-date-month-grid";
+  getAvailableActivityMonths(adminDatePickerYear).forEach(month => {
+    monthGrid.appendChild(createAdminDateButton(getMonthName(month), "admin-date-cell", function () {
+      selectAdminActivityDateFilter({
+        dateYear: adminDatePickerYear,
+        dateMonth: month
+      });
+    }, {
+      active: filters.dateYear === adminDatePickerYear && filters.dateMonth === month && !filters.dateDay
+    }));
+  });
+
+  adminDatePickerGrid.appendChild(monthGrid);
+}
+
+function renderAdminDayPicker(filters) {
+  adminDatePickerHeading.textContent = `Select day in ${getMonthName(adminDatePickerMonth)} ${adminDatePickerYear}`;
+  adminDatePickerGrid.appendChild(renderAdminDateYearStrip(filters));
+  adminDatePickerGrid.appendChild(renderAdminDateMonthStrip(filters));
+
+  const dayGrid = document.createElement("div");
+  dayGrid.className = "admin-date-calendar-grid";
+  ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach(dayName => {
+    const label = document.createElement("span");
+    label.className = "admin-date-weekday";
+    label.textContent = dayName;
+    dayGrid.appendChild(label);
+  });
+
+  const activeDays = getAvailableActivityDays(adminDatePickerYear, adminDatePickerMonth);
+  const daysInMonth = new Date(Number(adminDatePickerYear), Number(adminDatePickerMonth), 0).getDate();
+  const firstDate = new Date(Number(adminDatePickerYear), Number(adminDatePickerMonth) - 1, 1);
+  const leadingBlanks = (firstDate.getDay() + 6) % 7;
+
+  for (let index = 0; index < leadingBlanks; index += 1) {
+    const blank = document.createElement("span");
+    blank.className = "admin-date-calendar-blank";
+    dayGrid.appendChild(blank);
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dayValue = String(day).padStart(2, "0");
+    dayGrid.appendChild(createAdminDateButton(String(day), "admin-date-day", function () {
+      selectAdminActivityDateFilter({
+        dateYear: adminDatePickerYear,
+        dateMonth: adminDatePickerMonth,
+        dateDay: dayValue
+      });
+    }, {
+      disabled: !activeDays.includes(dayValue),
+      active: filters.dateYear === adminDatePickerYear && filters.dateMonth === adminDatePickerMonth && filters.dateDay === dayValue
+    }));
+  }
+
+  adminDatePickerGrid.appendChild(dayGrid);
+}
+
 function renderAdminDateFilterOptions(filters) {
+  if (!adminDatePickerTrigger || !adminDatePickerLabel || !adminDatePickerGrid || !adminDatePickerHeading) return;
+
   const years = getAvailableActivityYears();
-  const months = filters.dateYear ? getAvailableActivityMonths(filters.dateYear) : [];
-  const days = filters.dateYear && filters.dateMonth
-    ? getAvailableActivityDays(filters.dateYear, filters.dateMonth)
-    : [];
-
-  setAdminDateSelectOptions(adminActivityYearFilter, "Year", years);
-  if (adminActivityYearFilter) adminActivityYearFilter.value = filters.dateYear;
-
-  setAdminDateSelectOptions(adminActivityMonthFilter, "Month", months, value => Number(value));
-  if (adminActivityMonthFilter) {
-    adminActivityMonthFilter.value = filters.dateMonth;
-    adminActivityMonthFilter.disabled = !filters.dateYear || !months.length;
+  if (!years.length) {
+    adminDatePickerLabel.textContent = "No activity dates";
+    adminDatePickerTrigger.disabled = true;
+    return;
   }
 
-  setAdminDateSelectOptions(adminActivityDayFilter, "Day", days, value => Number(value));
-  if (adminActivityDayFilter) {
-    adminActivityDayFilter.value = filters.dateDay;
-    adminActivityDayFilter.disabled = !filters.dateYear || !filters.dateMonth || !days.length;
+  adminDatePickerTrigger.disabled = false;
+  adminDatePickerLabel.textContent = formatAdminDateFilterLabel(filters);
+
+  if (adminDatePickerPopover?.classList.contains("hidden")) {
+    adminDatePickerMode = getAdminDateModeFromFilters(filters);
   }
+
+  adminDatePickerYear = filters.dateYear || adminDatePickerYear || years[0];
+  if (!years.includes(adminDatePickerYear)) {
+    adminDatePickerYear = years[0];
+  }
+
+  const months = getAvailableActivityMonths(adminDatePickerYear);
+  adminDatePickerMonth = filters.dateMonth || adminDatePickerMonth || months[0] || "";
+  if (months.length && !months.includes(adminDatePickerMonth)) {
+    adminDatePickerMonth = months[0];
+  }
+
+  document.querySelectorAll(".admin-date-mode").forEach(button => {
+    button.classList.toggle("active", button.dataset.mode === adminDatePickerMode);
+  });
+
+  adminDatePickerGrid.innerHTML = "";
+
+  if (adminDatePickerMode === "month") {
+    renderAdminMonthPicker(filters);
+    return;
+  }
+
+  if (adminDatePickerMode === "day") {
+    renderAdminDayPicker(filters);
+    return;
+  }
+
+  renderAdminYearPicker(filters);
 }
 
 function syncAdminUserFilterControls(filters) {
@@ -2189,26 +2385,33 @@ if (adminRoleFilter) {
   });
 }
 
-if (adminActivityYearFilter) {
-  adminActivityYearFilter.addEventListener("change", function () {
-    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "dateYear", value: this.value } });
-    refreshAdmin();
+if (adminDatePickerTrigger) {
+  adminDatePickerTrigger.addEventListener("click", function (event) {
+    event.stopPropagation();
+    toggleAdminDatePicker();
   });
 }
 
-if (adminActivityMonthFilter) {
-  adminActivityMonthFilter.addEventListener("change", function () {
-    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "dateMonth", value: this.value } });
-    refreshAdmin();
+document.querySelectorAll(".admin-date-mode").forEach(button => {
+  button.addEventListener("click", function (event) {
+    event.stopPropagation();
+    setAdminDatePickerMode(this.dataset.mode || "year");
+  });
+});
+
+if (adminDatePickerPopover) {
+  adminDatePickerPopover.addEventListener("click", function (event) {
+    event.stopPropagation();
   });
 }
 
-if (adminActivityDayFilter) {
-  adminActivityDayFilter.addEventListener("change", function () {
-    dispatch({ type: "SET_ADMIN_USER_FILTER", payload: { name: "dateDay", value: this.value } });
-    refreshAdmin();
-  });
-}
+document.addEventListener("click", closeAdminDatePicker);
+
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape") {
+    closeAdminDatePicker();
+  }
+});
 
 if (activityActionFilter) {
   activityActionFilter.addEventListener("change", function () {

@@ -971,8 +971,18 @@ app.get("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
   const activityParams = [];
 
   if (searchText) {
-    where.push("u.username LIKE ?");
-    params.push(`%${searchText}%`);
+    const searchPattern = `%${searchText}%`;
+    where.push(`(
+      u.username LIKE ?
+      OR u.role LIKE ?
+      OR EXISTS (
+        SELECT 1
+        FROM user_activity sx
+        WHERE sx.user_id = u.id
+          AND (sx.action LIKE ? OR sx.details LIKE ?)
+      )
+    )`);
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern);
   }
 
   if (["user", "admin"].includes(role)) {
@@ -1089,8 +1099,9 @@ app.get("/api/admin/activities", authenticate, requireAdmin, async (req, res) =>
   const dateCondition = createActivityDateCondition("a.created_at", req.query);
 
   if (searchText) {
-    where.push("u.username LIKE ?");
-    params.push(`%${searchText}%`);
+    const searchPattern = `%${searchText}%`;
+    where.push("(u.username LIKE ? OR u.role LIKE ? OR a.action LIKE ? OR a.details LIKE ?)");
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern);
   }
 
   if (["user", "admin"].includes(role)) {

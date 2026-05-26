@@ -78,22 +78,25 @@
         <div>
           <h2>User Accounts</h2>
           <div class="admin-user-controls">
-            <input type="search" id="admin-user-search" placeholder="Search username" />
+            <input type="search" id="admin-user-search" placeholder="Search users or activity" />
             <select id="admin-role-filter">
               <option value="">All roles</option>
               <option value="user">user</option>
               <option value="admin">admin</option>
             </select>
-            <div class="admin-date-controls" aria-label="Filter activity date">
-              <select id="admin-activity-year-filter" aria-label="Filter activity year">
-                <option value="">Year</option>
-              </select>
-              <select id="admin-activity-month-filter" aria-label="Filter activity month">
-                <option value="">Month</option>
-              </select>
-              <select id="admin-activity-day-filter" aria-label="Filter activity day">
-                <option value="">Day</option>
-              </select>
+            <div class="admin-date-picker" aria-label="Filter activity date">
+              <button type="button" id="admin-date-picker-trigger" class="admin-date-picker-trigger" aria-expanded="false">
+                <span id="admin-date-picker-label">All dates</span>
+              </button>
+              <div id="admin-date-picker-popover" class="admin-date-picker-popover hidden">
+                <div class="admin-date-mode-tabs" role="tablist" aria-label="Activity date precision">
+                  <button type="button" class="admin-date-mode active" data-mode="year">Year</button>
+                  <button type="button" class="admin-date-mode" data-mode="month">Month</button>
+                  <button type="button" class="admin-date-mode" data-mode="day">Day</button>
+                </div>
+                <div id="admin-date-picker-heading" class="admin-date-picker-heading">Select year</div>
+                <div id="admin-date-picker-grid" class="admin-date-picker-grid"></div>
+              </div>
             </div>
             <select id="activity-action-filter">
               <option value="">All activities</option>
