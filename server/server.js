@@ -14,6 +14,13 @@ const DEFAULT_CATEGORIES = [
   { name: "Transport", bg: "hsl(184 51% 83%)", border: "hsl(184 40% 71%)" },
   { name: "Utilities", bg: "hsl(350 51% 83%)", border: "hsl(350 40% 71%)" }
 ];
+const EXPENSE_SORTS = {
+  "date-desc": "expense_date DESC, id DESC",
+  "date-asc": "expense_date ASC, id ASC",
+  "amount-desc": "CAST(amount AS DECIMAL(10,2)) DESC, id DESC",
+  "amount-asc": "CAST(amount AS DECIMAL(10,2)) ASC, id ASC",
+  "title-asc": "title ASC, id ASC"
+};
 const ADMIN_ACCOUNTS = parseAdminAccounts();
 
 app.use(cors());
@@ -125,6 +132,62 @@ function createPagination(total, page, pageSize) {
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
     total
   };
+}
+
+function getExpenseSort(sort) {
+  return EXPENSE_SORTS[sort] || EXPENSE_SORTS["date-desc"];
+}
+
+function addExpenseFilterConditions(where, params, filters) {
+  const {
+    search = "",
+    category = "",
+    minAmount = "",
+    maxAmount = ""
+  } = filters;
+  const searchText = String(search).trim();
+  const minValue = Number.parseFloat(minAmount);
+  const maxValue = Number.parseFloat(maxAmount);
+
+  if (searchText) {
+    where.push("(title LIKE ? OR category LIKE ? OR description LIKE ?)");
+    params.push(`%${searchText}%`, `%${searchText}%`, `%${searchText}%`);
+  }
+
+  if (category) {
+    where.push("category = ?");
+    params.push(category);
+  }
+
+  if (Number.isFinite(minValue)) {
+    where.push("CAST(amount AS DECIMAL(10,2)) >= ?");
+    params.push(minValue);
+  }
+
+  if (Number.isFinite(maxValue)) {
+    where.push("CAST(amount AS DECIMAL(10,2)) <= ?");
+    params.push(maxValue);
+  }
+}
+
+function validateExpensePayload({ title, category, amount, date }) {
+  if (!title || !category || amount === undefined || !date) {
+    return "Missing required fields";
+  }
+
+  if (!isPositiveAmount(amount)) {
+    return "Amount must be greater than 0";
+  }
+
+  if (!isValidDate(date)) {
+    return "Date must be YYYY-MM-DD and year cannot start with 0";
+  }
+
+  if (isFutureDate(date)) {
+    return "Future dates cannot be selected";
+  }
+
+  return "";
 }
 
 function getActivityActionPattern(action) {
@@ -628,6 +691,7 @@ app.put("/api/categories/:id", authenticate, async (req, res) => {
 
 app.delete("/api/categories/:id", authenticate, async (req, res) => {
   const { id } = req.params;
+  let transactionStarted = false;
 
   try {
     const [categories] = await query("SELECT name FROM categories WHERE id = ?", [id]);
@@ -641,49 +705,49 @@ app.delete("/api/categories/:id", authenticate, async (req, res) => {
       "SELECT COUNT(*) AS total FROM expenses WHERE category = ?",
       [category.name]
     );
+    const deletedExpenseCount = Number(expenseRows[0]?.total || 0);
 
-    if (Number(expenseRows[0]?.total || 0) > 0) {
-      return res.status(400).json({ error: "Delete or move this ledger's bills first" });
+    await query("START TRANSACTION");
+    transactionStarted = true;
+    await query("DELETE FROM expenses WHERE category = ?", [category.name]);
+    await query("DELETE FROM categories WHERE id = ?", [id]);
+    await query("COMMIT");
+    transactionStarted = false;
+
+    await logActivity(
+      req.user.id,
+      "delete_category",
+      `Deleted ledger ${category.name} and ${deletedExpenseCount} ${deletedExpenseCount === 1 ? "bill" : "bills"}`
+    );
+    res.json({
+      message: "Ledger deleted successfully",
+      deletedExpenses: deletedExpenseCount
+    });
+  } catch (err) {
+    if (transactionStarted) {
+      try {
+        await query("ROLLBACK");
+      } catch (rollbackErr) {
+        console.error("Failed to roll back ledger deletion:", rollbackErr);
+      }
     }
 
-    await query("DELETE FROM categories WHERE id = ?", [id]);
-    await logActivity(req.user.id, "delete_category", `Deleted ledger ${category.name}`);
-    res.json({ message: "Ledger deleted successfully" });
-  } catch (err) {
     console.error("Failed to delete ledger:", err);
     res.status(500).json({ error: "Failed to delete ledger" });
   }
 });
 
 app.get("/api/expenses", authenticate, async (req, res) => {
-  const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc", month = "", id = "" } = req.query;
+  const { sort = "date-desc", month = "", id = "" } = req.query;
   const { page, pageSize, offset } = getPagination({
     ...req.query,
     pageSize: req.query.pageSize || 24
   });
   const where = ["user_id = ?"];
   const params = [req.user.id];
-  const searchText = String(search).trim();
-  const minValue = Number.parseFloat(minAmount);
-  const maxValue = Number.parseFloat(maxAmount);
   const expenseId = Number.parseInt(id, 10);
-  const sortMap = {
-    "date-desc": "expense_date DESC, id DESC",
-    "date-asc": "expense_date ASC, id ASC",
-    "amount-desc": "CAST(amount AS DECIMAL(10,2)) DESC, id DESC",
-    "amount-asc": "CAST(amount AS DECIMAL(10,2)) ASC, id ASC",
-    "title-asc": "title ASC, id ASC"
-  };
 
-  if (searchText) {
-    where.push("(title LIKE ? OR category LIKE ? OR description LIKE ?)");
-    params.push(`%${searchText}%`, `%${searchText}%`, `%${searchText}%`);
-  }
-
-  if (category) {
-    where.push("category = ?");
-    params.push(category);
-  }
+  addExpenseFilterConditions(where, params, req.query);
 
   if (/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(String(month))) {
     where.push("SUBSTRING(expense_date, 1, 7) = ?");
@@ -693,16 +757,6 @@ app.get("/api/expenses", authenticate, async (req, res) => {
   if (Number.isInteger(expenseId) && expenseId > 0) {
     where.push("id = ?");
     params.push(expenseId);
-  }
-
-  if (Number.isFinite(minValue)) {
-    where.push("CAST(amount AS DECIMAL(10,2)) >= ?");
-    params.push(minValue);
-  }
-
-  if (Number.isFinite(maxValue)) {
-    where.push("CAST(amount AS DECIMAL(10,2)) <= ?");
-    params.push(maxValue);
   }
 
   try {
@@ -720,7 +774,7 @@ app.get("/api/expenses", authenticate, async (req, res) => {
         SELECT *
         FROM expenses
         WHERE ${where.join(" AND ")}
-        ORDER BY ${sortMap[sort] || sortMap["date-desc"]}
+        ORDER BY ${getExpenseSort(sort)}
         LIMIT ? OFFSET ?
       `,
       [...params, pageSize, offset]
@@ -738,23 +792,10 @@ app.get("/api/expenses", authenticate, async (req, res) => {
 
 app.post("/api/expenses", authenticate, async (req, res) => {
   const { title, category, amount, date, description } = req.body;
+  const validationError = validateExpensePayload(req.body);
 
-  if (!title || !category || amount === undefined || !date) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  if (!isPositiveAmount(amount)) {
-    return res.status(400).json({ error: "Amount must be greater than 0" });
-  }
-
-  if (!isValidDate(date)) {
-    return res.status(400).json({
-      error: "Date must be YYYY-MM-DD and year cannot start with 0"
-    });
-  }
-
-  if (isFutureDate(date)) {
-    return res.status(400).json({ error: "Future dates cannot be selected" });
+  if (validationError) {
+    return res.status(400).json({ error: validationError });
   }
 
   try {
@@ -784,23 +825,10 @@ app.post("/api/expenses", authenticate, async (req, res) => {
 app.put("/api/expenses/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   const { title, category, amount, date, description } = req.body;
+  const validationError = validateExpensePayload(req.body);
 
-  if (!title || !category || amount === undefined || !date) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  if (!isPositiveAmount(amount)) {
-    return res.status(400).json({ error: "Amount must be greater than 0" });
-  }
-
-  if (!isValidDate(date)) {
-    return res.status(400).json({
-      error: "Date must be YYYY-MM-DD and year cannot start with 0"
-    });
-  }
-
-  if (isFutureDate(date)) {
-    return res.status(400).json({ error: "Future dates cannot be selected" });
+  if (validationError) {
+    return res.status(400).json({ error: validationError });
   }
 
   try {
@@ -829,16 +857,11 @@ app.put("/api/expenses/:id", authenticate, async (req, res) => {
   }
 });
 
-app.delete("/api/expenses/:id", authenticate, (req, res) => {
+app.delete("/api/expenses/:id", authenticate, async (req, res) => {
   const { id } = req.params;
 
-  const sql = "DELETE FROM expenses WHERE id = ? AND user_id = ?";
-
-  db.query(sql, [id, req.user.id], async (err, result) => {
-    if (err) {
-      console.error("Failed to delete expense:", err);
-      return res.status(500).json({ error: "Failed to delete expense" });
-    }
+  try {
+    const [result] = await query("DELETE FROM expenses WHERE id = ? AND user_id = ?", [id, req.user.id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Expense not found" });
@@ -846,26 +869,27 @@ app.delete("/api/expenses/:id", authenticate, (req, res) => {
 
     await logActivity(req.user.id, "delete_expense", `Deleted expense #${id}`);
     res.json({ message: "Expense deleted successfully" });
-  });
+  } catch (err) {
+    console.error("Failed to delete expense:", err);
+    res.status(500).json({ error: "Failed to delete expense" });
+  }
 });
 
-app.get("/api/summary/category", authenticate, (req, res) => {
-  const sql = `
-    SELECT category, SUM(amount) AS total
-    FROM expenses
-    WHERE user_id = ?
-    GROUP BY category
-    ORDER BY total DESC
-  `;
+app.get("/api/summary/category", authenticate, async (req, res) => {
+  try {
+    const [rows] = await query(`
+      SELECT category, SUM(amount) AS total
+      FROM expenses
+      WHERE user_id = ?
+      GROUP BY category
+      ORDER BY total DESC
+    `, [req.user.id]);
 
-  db.query(sql, [req.user.id], (err, results) => {
-    if (err) {
-      console.error("Failed to fetch category summary:", err);
-      return res.status(500).json({ error: "Database query failed" });
-    }
-
-    res.json(results);
-  });
+    res.json(rows);
+  } catch (err) {
+    console.error("Failed to fetch category summary:", err);
+    res.status(500).json({ error: "Database query failed" });
+  }
 });
 
 app.get("/api/summary/monthly", authenticate, async (req, res) => {
@@ -889,50 +913,22 @@ app.get("/api/summary/monthly", authenticate, async (req, res) => {
 
 app.get("/api/summary/month-expenses", authenticate, async (req, res) => {
   const month = String(req.query.month || "");
-  const { search = "", category = "", minAmount = "", maxAmount = "", sort = "date-desc" } = req.query;
+  const { sort = "date-desc" } = req.query;
   const where = ["user_id = ?", "SUBSTRING(expense_date, 1, 7) = ?"];
   const params = [req.user.id, month];
-  const searchText = String(search).trim();
-  const minValue = Number.parseFloat(minAmount);
-  const maxValue = Number.parseFloat(maxAmount);
-  const sortMap = {
-    "date-desc": "expense_date DESC, id DESC",
-    "date-asc": "expense_date ASC, id ASC",
-    "amount-desc": "CAST(amount AS DECIMAL(10,2)) DESC, id DESC",
-    "amount-asc": "CAST(amount AS DECIMAL(10,2)) ASC, id ASC",
-    "title-asc": "title ASC, id ASC"
-  };
 
   if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month)) {
     return res.status(400).json({ error: "Month must be in YYYY-MM format" });
   }
 
-  if (searchText) {
-    where.push("(title LIKE ? OR category LIKE ? OR description LIKE ?)");
-    params.push(`%${searchText}%`, `%${searchText}%`, `%${searchText}%`);
-  }
-
-  if (category) {
-    where.push("category = ?");
-    params.push(category);
-  }
-
-  if (Number.isFinite(minValue)) {
-    where.push("CAST(amount AS DECIMAL(10,2)) >= ?");
-    params.push(minValue);
-  }
-
-  if (Number.isFinite(maxValue)) {
-    where.push("CAST(amount AS DECIMAL(10,2)) <= ?");
-    params.push(maxValue);
-  }
+  addExpenseFilterConditions(where, params, req.query);
 
   try {
     const [rows] = await query(`
       SELECT id, title, category, amount, expense_date, description, created_at
       FROM expenses
       WHERE ${where.join(" AND ")}
-      ORDER BY ${sortMap[sort] || sortMap["date-desc"]}
+      ORDER BY ${getExpenseSort(sort)}
     `, params);
 
     res.json(rows);

@@ -113,6 +113,23 @@ const deleteModalMessage = document.getElementById("delete-modal-message");
 const cancelDeleteBtn = document.getElementById("cancel-delete");
 const confirmDeleteBtn = document.getElementById("confirm-delete");
 
+const DELETE_MODAL_TITLES = {
+  category: "Delete Ledger?",
+  expense: "Delete Expense?",
+  user: "Delete User?"
+};
+
+function getDeleteModalMessage(deleteTarget) {
+  const label = deleteTarget.label;
+  const messages = {
+    category: `Are you sure you want to delete ${label || "this ledger"}?\nAll bills in this ledger will be deleted too.`,
+    expense: "Are you sure you want to delete this expense?",
+    user: `Are you sure you want to delete ${label || "this user account"}?`
+  };
+
+  return messages[deleteTarget.type] || messages.expense;
+}
+
 const initialState = {
   authToken: localStorage.getItem("expense_token"),
   activeUser: JSON.parse(localStorage.getItem("expense_user") || "null"),
@@ -474,13 +491,11 @@ function renderAppState(state, previousState, action) {
       hideModal(deleteModal);
     } else {
       if (deleteModalTitle) {
-        deleteModalTitle.textContent = state.deleteTarget.type === "user" ? "Delete User?" : "Delete Expense?";
+        deleteModalTitle.textContent = DELETE_MODAL_TITLES[state.deleteTarget.type] || DELETE_MODAL_TITLES.expense;
       }
 
       if (deleteModalMessage) {
-        deleteModalMessage.textContent = state.deleteTarget.type === "user"
-          ? `Are you sure you want to delete ${state.deleteTarget.label || "this user account"}?`
-          : "Are you sure you want to delete this expense?";
+        deleteModalMessage.textContent = getDeleteModalMessage(state.deleteTarget);
       }
 
       showModal(deleteModal);
@@ -518,48 +533,34 @@ function isPositiveAmount(value) {
   return Number.isFinite(amount) && amount > 0;
 }
 
-function validateExpenseFields(amountValue, dateValue) {
-  if (!setAmountValidity(amountInput, amountValue)) {
-    amountInput.reportValidity();
+function validateExpenseInputs(amountElement, dateElement, amountValue = amountElement?.value, dateValue = dateElement?.value) {
+  if (!setAmountValidity(amountElement, amountValue)) {
+    amountElement.reportValidity();
     return false;
   }
 
   if (!isValidDate(dateValue)) {
-    expenseDate.setCustomValidity("Date must be YYYY-MM-DD and the year cannot start with 0");
-    expenseDate.reportValidity();
+    dateElement.setCustomValidity("Date must be YYYY-MM-DD and the year cannot start with 0");
+    dateElement.reportValidity();
     return false;
   }
 
   if (isFutureDate(dateValue)) {
-    expenseDate.setCustomValidity("Future dates cannot be selected");
-    expenseDate.reportValidity();
+    dateElement.setCustomValidity("Future dates cannot be selected");
+    dateElement.reportValidity();
     return false;
   }
 
-  expenseDate.setCustomValidity("");
+  dateElement.setCustomValidity("");
   return true;
 }
 
+function validateExpenseFields(amountValue, dateValue) {
+  return validateExpenseInputs(amountInput, expenseDate, amountValue, dateValue);
+}
+
 function validateEditExpenseFields() {
-  if (!setAmountValidity(editAmount, editAmount.value)) {
-    editAmount.reportValidity();
-    return false;
-  }
-
-  if (!isValidDate(editDate.value)) {
-    editDate.setCustomValidity("Date must be YYYY-MM-DD and the year cannot start with 0");
-    editDate.reportValidity();
-    return false;
-  }
-
-  if (isFutureDate(editDate.value)) {
-    editDate.setCustomValidity("Future dates cannot be selected");
-    editDate.reportValidity();
-    return false;
-  }
-
-  editDate.setCustomValidity("");
-  return true;
+  return validateExpenseInputs(editAmount, editDate);
 }
 
 function setAmountValidity(input, value = input?.value) {
@@ -741,7 +742,7 @@ function renderUserCategories(categories) {
     deleteBtn.className = "small-danger-btn";
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", function () {
-      deleteCategory(category.id);
+      deleteCategory(category.id, category.name);
     });
 
     actions.append(editBtn, deleteBtn);
@@ -1351,11 +1352,7 @@ document.addEventListener("click", function (event) {
 function createExpenseQueryString(filters, pagination) {
   const params = new URLSearchParams();
 
-  if (filters.search.trim()) params.set("search", filters.search.trim());
-  if (filters.category) params.set("category", filters.category);
-  if (filters.minAmount !== "") params.set("minAmount", filters.minAmount);
-  if (filters.maxAmount !== "") params.set("maxAmount", filters.maxAmount);
-  if (filters.sort) params.set("sort", filters.sort);
+  appendExpenseFilterParams(params, filters);
   if (filters.month) params.set("month", filters.month);
   if (filters.expenseId) params.set("id", filters.expenseId);
   if (pagination) {
@@ -1366,16 +1363,20 @@ function createExpenseQueryString(filters, pagination) {
   return params.toString();
 }
 
-function createSummaryMonthExpenseQueryString(month) {
-  const { filters } = getAppState();
-  const params = new URLSearchParams();
-
-  params.set("month", month);
+function appendExpenseFilterParams(params, filters) {
   if (filters.search.trim()) params.set("search", filters.search.trim());
   if (filters.category) params.set("category", filters.category);
   if (filters.minAmount !== "") params.set("minAmount", filters.minAmount);
   if (filters.maxAmount !== "") params.set("maxAmount", filters.maxAmount);
   if (filters.sort) params.set("sort", filters.sort);
+}
+
+function createSummaryMonthExpenseQueryString(month) {
+  const { filters } = getAppState();
+  const params = new URLSearchParams();
+
+  params.set("month", month);
+  appendExpenseFilterParams(params, filters);
 
   return params.toString();
 }
@@ -1406,15 +1407,20 @@ async function fetchExpenses() {
   }
 }
 
+async function fetchSummaryMonthExpenses(month) {
+  const queryString = createSummaryMonthExpenseQueryString(month);
+  const data = await requestJson(`${API_BASE}/summary/month-expenses?${queryString}`, {
+    headers: authHeaders()
+  });
+
+  return Array.isArray(data) ? data : [];
+}
+
 async function refreshSelectedSummaryMonthExpenses() {
   if (!selectedSummaryMonth) return;
 
   try {
-    const queryString = createSummaryMonthExpenseQueryString(selectedSummaryMonth);
-    const data = await requestJson(`${API_BASE}/summary/month-expenses?${queryString}`, {
-      headers: authHeaders()
-    });
-    summarySelectedMonthExpenses = Array.isArray(data) ? data : [];
+    summarySelectedMonthExpenses = await fetchSummaryMonthExpenses(selectedSummaryMonth);
   } catch (error) {
     summarySelectedMonthExpenses = [];
     console.error("Failed to fetch month expenses:", error);
@@ -1446,12 +1452,31 @@ function formatSummaryMonth(month) {
 }
 
 function getSummaryYears(monthlyData) {
-  const years = [...new Set(monthlyData.map(item => String(item.month).slice(0, 4)))];
+  const years = [
+    ...new Set([
+      String(new Date().getFullYear()),
+      ...monthlyData.map(item => String(item.month).slice(0, 4))
+    ])
+  ];
   return years.sort((a, b) => b.localeCompare(a));
 }
 
 function getSummaryMonthsForYear(year) {
   return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`);
+}
+
+function getSummaryYearTotal(year) {
+  return summaryMonthlyData
+    .filter(item => String(item.month).slice(0, 4) === String(year))
+    .reduce((sum, item) => sum + Number(item.total || 0), 0);
+}
+
+function renderSummaryTotal() {
+  if (!totalAmount) return;
+  const summaryTotal = selectedSummaryMonth
+    ? getSummaryMonthTotal(selectedSummaryMonth)
+    : getSummaryYearTotal(selectedSummaryYear);
+  totalAmount.textContent = summaryTotal.toFixed(2);
 }
 
 function renderSummaryYearMenu(years) {
@@ -1543,11 +1568,7 @@ async function selectSummaryMonth(month) {
   fetchExpenses();
 
   try {
-    const queryString = createSummaryMonthExpenseQueryString(month);
-    const data = await requestJson(`${API_BASE}/summary/month-expenses?${queryString}`, {
-      headers: authHeaders()
-    });
-    summarySelectedMonthExpenses = Array.isArray(data) ? data : [];
+    summarySelectedMonthExpenses = await fetchSummaryMonthExpenses(month);
   } catch (error) {
     summarySelectedMonthExpenses = [];
     console.error("Failed to fetch month expenses:", error);
@@ -1703,6 +1724,7 @@ function renderInteractiveSummary() {
   }
 
   renderSummaryYearMenu(years);
+  renderSummaryTotal();
   renderMonthlySummaryRows();
   renderSummaryLineChart();
   renderSummaryMonthExpenses();
@@ -1860,20 +1882,15 @@ async function saveCategory() {
   }
 }
 
-async function deleteCategory(categoryIdValue) {
-  if (!confirm("Delete this ledger? Ledgers with bills cannot be deleted.")) return;
-
-  try {
-    await requestJson(`${API_BASE}/categories/${categoryIdValue}`, {
-      method: "DELETE",
-      headers: authHeaders()
-    });
-
-    await fetchCategories();
-    showToast("Category deleted successfully");
-  } catch (error) {
-    showToast(error.message);
-  }
+function deleteCategory(categoryIdValue, categoryNameValue) {
+  dispatch({
+    type: "START_DELETE",
+    payload: {
+      type: "category",
+      id: categoryIdValue,
+      label: categoryNameValue ? `ledger ${categoryNameValue}` : "this ledger"
+    }
+  });
 }
 
 function refreshAdmin() {
@@ -2001,9 +2018,12 @@ if (confirmDeleteBtn) {
 
     setTimeout(async () => {
       try {
-        const url = targetType === "user"
-          ? `${API_BASE}/admin/users/${targetId}`
-          : `${API_URL}/${targetId}`;
+        const deleteUrls = {
+          category: `${API_BASE}/categories/${targetId}`,
+          expense: `${API_URL}/${targetId}`,
+          user: `${API_BASE}/admin/users/${targetId}`
+        };
+        const url = deleteUrls[targetType] || deleteUrls.expense;
 
         await requestJson(url, {
           method: "DELETE",
@@ -2014,6 +2034,12 @@ if (confirmDeleteBtn) {
         if (targetType === "user") {
           refreshAdmin();
           showToast("User deleted successfully");
+        } else if (targetType === "category") {
+          resetCategoryForm();
+          await fetchCategories();
+          await fetchExpenses();
+          await fetchMonthlySummary();
+          showToast("Category deleted successfully");
         } else {
           refreshAll();
           showToast("Expense deleted successfully");
@@ -2217,14 +2243,12 @@ function createExpandedLedger(category, categoryExpenses, ledgerPage) {
 function renderExpenses(expenses, expandedCategories = {}, ledgerPage = 1) {
   expenseList.innerHTML = "";
   expenseList.classList.remove("open-ledger-view");
-  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
 
   if (!expenses.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
     empty.textContent = "No expenses match your current filters.";
     expenseList.appendChild(empty);
-    totalAmount.textContent = "0.00";
     return;
   }
 
@@ -2241,7 +2265,6 @@ function renderExpenses(expenses, expandedCategories = {}, ledgerPage = 1) {
     });
   }
 
-  totalAmount.textContent = total.toFixed(2);
 }
 
 function showToast(message) {
